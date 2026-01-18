@@ -581,6 +581,252 @@ const CATEGORY_GROUPS = {
   }
 };
 
+// ===========================================
+// Phase 5: Predictive Privacy Data Structures
+// ===========================================
+
+// Risk factors with uniqueness scores (higher = more unique = more dangerous)
+const RISK_FACTORS = {
+  // Financial - very high uniqueness
+  iban: { uniquenessScore: 0.95, category: 'financial', description: 'Bankverbindung ist quasi-eindeutig identifizierbar' },
+  credit_card: { uniquenessScore: 0.98, category: 'financial', description: 'Kreditkartennummer ist eindeutig und sehr wertvoll' },
+  bic: { uniquenessScore: 0.3, category: 'financial', description: 'BIC identifiziert nur die Bank, nicht den Inhaber' },
+  account_number: { uniquenessScore: 0.85, category: 'financial', description: 'Kontonummer in Kombination mit Bank identifizierbar' },
+
+  // Identity - highest uniqueness
+  national_id: { uniquenessScore: 0.99, category: 'identity', description: 'Personalausweisnummer ist eindeutig für eine Person' },
+  passport: { uniquenessScore: 0.99, category: 'identity', description: 'Reisepassnummer ist eindeutig' },
+  tax_id: { uniquenessScore: 0.99, category: 'identity', description: 'Steuer-ID ist lebenslang eindeutig' },
+  social_security: { uniquenessScore: 0.99, category: 'identity', description: 'Sozialversicherungsnummer ist eindeutig' },
+  drivers_license: { uniquenessScore: 0.95, category: 'identity', description: 'Führerscheinnummer ist eindeutig' },
+
+  // Health - high sensitivity
+  health_insurance: { uniquenessScore: 0.9, category: 'health', description: 'Krankenversicherungsnummer ist personenbezogen' },
+  medical_record: { uniquenessScore: 0.85, category: 'health', description: 'Patientennummer ist innerhalb des Systems eindeutig' },
+
+  // Digital - varies
+  ip_address: { uniquenessScore: 0.4, category: 'digital', description: 'IP kann sich ändern, Geolocation möglich' },
+  mac_address: { uniquenessScore: 0.8, category: 'digital', description: 'MAC identifiziert Gerät eindeutig' },
+  username: { uniquenessScore: 0.6, category: 'digital', description: 'Usernames können oft mit Personen verknüpft werden' },
+  password: { uniquenessScore: 0.9, category: 'digital', description: 'Passwörter ermöglichen direkten Zugriff' },
+  api_key: { uniquenessScore: 0.95, category: 'digital', description: 'API-Keys sind systemweit eindeutig' },
+
+  // Personal - medium to high
+  phone: { uniquenessScore: 0.85, category: 'personal', description: 'Telefonnummern sind meist personengebunden' },
+  email: { uniquenessScore: 0.8, category: 'personal', description: 'E-Mail-Adressen sind oft eindeutig identifizierbar' },
+  date_of_birth: { uniquenessScore: 0.15, category: 'personal', description: 'Allein wenig eindeutig, in Kombination wichtig' },
+  age: { uniquenessScore: 0.05, category: 'personal', description: 'Alter allein nicht identifizierend' },
+
+  // Location - context dependent
+  gps_coordinates: { uniquenessScore: 0.7, category: 'location', description: 'GPS kann Wohn-/Arbeitsort verraten' },
+  license_plate: { uniquenessScore: 0.9, category: 'location', description: 'Kennzeichen ist Halter zugeordnet' },
+  address: { uniquenessScore: 0.75, category: 'location', description: 'Adresse identifiziert Wohnort' },
+  postal_code: { uniquenessScore: 0.2, category: 'location', description: 'PLZ grenzt Region ein' },
+
+  // Context/Semantic
+  vacation_hint: { uniquenessScore: 0.1, category: 'context', description: 'Abwesenheitsinfo ist zeitlich relevant' },
+  german_date: { uniquenessScore: 0.05, category: 'personal', description: 'Datum allein nicht identifizierend' },
+  health: { uniquenessScore: 0.6, category: 'semantic', description: 'Gesundheitsinfos können identifizierend sein' },
+  child: { uniquenessScore: 0.7, category: 'semantic', description: 'Kinderdaten + Kontext sehr sensibel' },
+  location: { uniquenessScore: 0.5, category: 'semantic', description: 'Semantische Standortinfos' },
+  emotion: { uniquenessScore: 0.2, category: 'semantic', description: 'Emotionen selten identifizierend' },
+  employer: { uniquenessScore: 0.4, category: 'semantic', description: 'Arbeitgeber in Kombination relevant' },
+  vacation: { uniquenessScore: 0.15, category: 'semantic', description: 'Urlaubsinfo zeitlich relevant' },
+  legal: { uniquenessScore: 0.3, category: 'semantic', description: 'Rechtliche Aussagen kontextabhängig' }
+};
+
+// Breach scenarios with impact assessment
+const BREACH_SCENARIOS = [
+  {
+    id: 'data_broker',
+    name: 'Datenbroker-Verkauf',
+    description: 'Daten werden an Datenbroker verkauft und mit anderen Quellen kombiniert',
+    probability: 0.4,
+    relevantTypes: ['email', 'phone', 'address', 'postal_code', 'date_of_birth', 'age'],
+    consequences: [
+      'Zielgerichtete Werbung und Tracking',
+      'Profilerstellung über verschiedene Plattformen',
+      'Weiterverkauf an Dritte'
+    ],
+    timeToImpact: 'sofort bis Wochen',
+    mitigations: ['Einwegadressen nutzen', 'Virtuelle Telefonnummern', 'Privacy-Browser']
+  },
+  {
+    id: 'identity_theft',
+    name: 'Identitätsdiebstahl',
+    description: 'Kriminelle nutzen persönliche Daten für Betrug oder Identitätsdiebstahl',
+    probability: 0.25,
+    relevantTypes: ['national_id', 'passport', 'tax_id', 'social_security', 'drivers_license', 'date_of_birth', 'address'],
+    consequences: [
+      'Eröffnung von Konten/Krediten in deinem Namen',
+      'Steuerbetrug mit deiner ID',
+      'Kriminelle Handlungen unter falscher Identität'
+    ],
+    timeToImpact: 'Tage bis Monate',
+    mitigations: ['SCHUFA-Auskunft sperren', 'Behörden informieren', 'Bonitätsüberwachung aktivieren']
+  },
+  {
+    id: 'financial_fraud',
+    name: 'Finanzbetrug',
+    description: 'Angreifer nutzen Finanzdaten für unberechtigte Transaktionen',
+    probability: 0.35,
+    relevantTypes: ['iban', 'credit_card', 'bic', 'account_number'],
+    consequences: [
+      'Unberechtigte Abbuchungen',
+      'Kreditkartenbetrug',
+      'Überweisungsbetrug'
+    ],
+    timeToImpact: 'Stunden bis Tage',
+    mitigations: ['Bank sofort informieren', 'Karte sperren', 'Transaktionen überwachen']
+  },
+  {
+    id: 'phishing_targeted',
+    name: 'Gezieltes Phishing',
+    description: 'Personalisierte Betrugsversuche basierend auf gesammelten Daten',
+    probability: 0.5,
+    relevantTypes: ['email', 'phone', 'employer', 'health', 'child'],
+    consequences: [
+      'Überzeugendere Phishing-Nachrichten',
+      'CEO-Fraud / Business Email Compromise',
+      'Soziale Manipulation durch Kontextkenntnis'
+    ],
+    timeToImpact: 'Tage bis Wochen',
+    mitigations: ['Zwei-Faktor-Authentifizierung', 'Schulung für Phishing-Erkennung', 'Rückruf bei verdächtigen Anfragen']
+  },
+  {
+    id: 'physical_stalking',
+    name: 'Physisches Stalking',
+    description: 'Standortdaten ermöglichen reale Verfolgung',
+    probability: 0.15,
+    relevantTypes: ['gps_coordinates', 'address', 'license_plate', 'vacation_hint', 'vacation', 'location'],
+    consequences: [
+      'Physische Verfolgung',
+      'Einbruch während Abwesenheit',
+      'Belästigung am Wohnort/Arbeitsplatz'
+    ],
+    timeToImpact: 'sofort',
+    mitigations: ['Standortdaten nie öffentlich teilen', 'Urlaub erst nach Rückkehr posten', 'Sicherheitsvorkehrungen treffen']
+  },
+  {
+    id: 'medical_discrimination',
+    name: 'Gesundheitsdiskriminierung',
+    description: 'Gesundheitsdaten führen zu Benachteiligungen',
+    probability: 0.2,
+    relevantTypes: ['health_insurance', 'medical_record', 'health'],
+    consequences: [
+      'Versicherungsablehnung/-erhöhung',
+      'Arbeitgeberdiskriminierung',
+      'Soziale Stigmatisierung'
+    ],
+    timeToImpact: 'Wochen bis Jahre',
+    mitigations: ['Gesundheitsdaten nur verschlüsselt teilen', 'Recht auf Löschung nutzen', 'DSGVO-Beschwerden']
+  },
+  {
+    id: 'credential_stuffing',
+    name: 'Credential Stuffing',
+    description: 'Geleakte Zugangsdaten werden für automatisierte Einbruchsversuche genutzt',
+    probability: 0.6,
+    relevantTypes: ['password', 'username', 'email', 'api_key'],
+    consequences: [
+      'Übernahme von Accounts',
+      'Kettenreaktion bei Passwort-Wiederverwendung',
+      'Finanzieller Schaden durch kompromittierte Dienste'
+    ],
+    timeToImpact: 'Minuten bis Stunden',
+    mitigations: ['Einzigartige Passwörter pro Dienst', 'Passwort-Manager', 'Sofortige Passwortänderung bei Leak']
+  },
+  {
+    id: 'child_exploitation',
+    name: 'Gefährdung von Kindern',
+    description: 'Kinderdaten werden für Manipulations- oder Gefährdungszwecke missbraucht',
+    probability: 0.1,
+    relevantTypes: ['child'],
+    consequences: [
+      'Annäherungsversuche an Minderjährige',
+      'Soziale Manipulation über Kinder',
+      'Langfristige Profilerstellung von Minderjährigen'
+    ],
+    timeToImpact: 'variabel',
+    mitigations: ['Kinderdaten niemals öffentlich teilen', 'Schulnamen etc. anonymisieren', 'Kinderfotos ohne Gesicht']
+  }
+];
+
+// Correlation attack methods
+const CORRELATION_METHODS = [
+  {
+    id: 'cross_platform',
+    name: 'Plattformübergreifende Korrelation',
+    description: 'Kombination von Daten aus verschiedenen sozialen Netzwerken',
+    dataPoints: ['username', 'email', 'phone', 'photo_metadata'],
+    difficulty: 'mittel',
+    effectiveness: 0.7,
+    example: 'Username "MaxM89" erscheint auf Twitter, LinkedIn und Gaming-Forum → vollständiges Profil'
+  },
+  {
+    id: 'temporal_location',
+    name: 'Zeitliche Standortanalyse',
+    description: 'Verknüpfung von Standortdaten über Zeit',
+    dataPoints: ['gps_coordinates', 'address', 'postal_code', 'vacation_hint'],
+    difficulty: 'niedrig',
+    effectiveness: 0.8,
+    example: 'Mehrere Standort-Posts = Bewegungsprofil → Wohnort und Arbeitsplatz identifizierbar'
+  },
+  {
+    id: 'social_graph',
+    name: 'Soziales Netzwerk-Mapping',
+    description: 'Rekonstruktion des sozialen Umfelds aus verschiedenen Quellen',
+    dataPoints: ['employer', 'child', 'phone', 'email'],
+    difficulty: 'mittel',
+    effectiveness: 0.6,
+    example: 'Erwähnung von Kollegen + Firma + Schulen der Kinder → komplettes Umfeld'
+  },
+  {
+    id: 'financial_pattern',
+    name: 'Finanzielle Verhaltensanalyse',
+    description: 'Kombination von Finanzdaten für Profilierung',
+    dataPoints: ['iban', 'credit_card', 'account_number'],
+    difficulty: 'hoch',
+    effectiveness: 0.5,
+    example: 'IBAN + Transaktionsmuster = Einkommensschätzung und Ausgabeverhalten'
+  },
+  {
+    id: 'biometric_link',
+    name: 'Biometrische Verknüpfung',
+    description: 'Gesichtserkennung und Bildanalyse über Plattformen',
+    dataPoints: ['photo', 'video', 'social_media_profile'],
+    difficulty: 'mittel',
+    effectiveness: 0.75,
+    example: 'Profilbild-Suche findet gleiche Person auf anderen Plattformen'
+  },
+  {
+    id: 'linguistic_fingerprint',
+    name: 'Linguistische Analyse',
+    description: 'Schreibstil-Analyse zur Identifikation',
+    dataPoints: ['text_samples', 'comments', 'posts'],
+    difficulty: 'hoch',
+    effectiveness: 0.4,
+    example: 'Charakteristischer Schreibstil verknüpft anonyme Posts mit bekanntem Account'
+  },
+  {
+    id: 'device_fingerprint',
+    name: 'Geräte-Fingerprinting',
+    description: 'Identifikation über eindeutige Geräteeigenschaften',
+    dataPoints: ['ip_address', 'mac_address', 'browser_fingerprint'],
+    difficulty: 'niedrig',
+    effectiveness: 0.85,
+    example: 'Kombination aus Browser-Version, Plugins, Bildschirmauflösung ist oft eindeutig'
+  },
+  {
+    id: 'metadata_analysis',
+    name: 'Metadaten-Auswertung',
+    description: 'Analyse versteckter Daten in Dateien',
+    dataPoints: ['photo_exif', 'document_metadata', 'gps_coordinates'],
+    difficulty: 'niedrig',
+    effectiveness: 0.7,
+    example: 'EXIF-Daten in Foto enthalten GPS-Koordinaten, Kameramodell und Zeitstempel'
+  }
+];
+
 // Context-specific warnings
 const CONTEXT_WARNINGS = {
   whatsapp: 'WhatsApp-Nachrichten können weitergeleitet werden',
@@ -664,12 +910,12 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '4.0.0',
-    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns'],
+    version: '5.0.0',
+    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy'],
     languages: SUPPORTED_LANGUAGES,
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
-      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health', '/api/v2/languages', '/api/v2/ping', '/api/v2/patterns/offline']
+      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/analyze/predictive', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health', '/api/v2/languages', '/api/v2/ping', '/api/v2/patterns/offline', '/api/v2/risk-factors', '/api/v2/breach-scenarios', '/api/v2/correlation-methods']
     }
   });
 });
@@ -913,6 +1159,319 @@ function generateSummary(categories) {
   if (medium > 0) parts.push(`${medium} mittleres${medium > 1 ? '' : ''} Risiko${medium > 1 ? 'en' : ''}`);
 
   return parts.join(' und ') + ' erkannt';
+}
+
+// ===========================================
+// Phase 5: Predictive Privacy Functions
+// ===========================================
+
+// Calculate deanonymization risk score (k-Anonymity concept)
+// Formula: deanon_risk = 1 - ∏(1 - uniqueness_score[i])
+function calculateDeanonymizationRisk(findings) {
+  if (!findings || findings.length === 0) {
+    return {
+      deanonymizationRisk: 0,
+      kAnonymityEstimate: 'hoch',
+      kValue: '>1000',
+      explanation: 'Keine identifizierenden Datenpunkte gefunden',
+      contributingFactors: []
+    };
+  }
+
+  // Get uniqueness scores for each finding
+  const contributingFactors = [];
+  let combinedProbability = 1;
+
+  for (const finding of findings) {
+    const riskFactor = RISK_FACTORS[finding.type];
+    if (riskFactor) {
+      const uniqueness = riskFactor.uniquenessScore;
+      combinedProbability *= (1 - uniqueness);
+
+      contributingFactors.push({
+        type: finding.type,
+        match: finding.match,
+        uniquenessScore: uniqueness,
+        description: riskFactor.description
+      });
+    }
+  }
+
+  // Deanonymization risk = 1 - combined probability of NOT being identified
+  const deanonymizationRisk = Math.round((1 - combinedProbability) * 100);
+
+  // Estimate k-Anonymity (how many people share this exact data combination)
+  let kAnonymityEstimate, kValue;
+  if (deanonymizationRisk >= 95) {
+    kAnonymityEstimate = 'sehr niedrig';
+    kValue = '1-5';
+  } else if (deanonymizationRisk >= 80) {
+    kAnonymityEstimate = 'niedrig';
+    kValue = '5-50';
+  } else if (deanonymizationRisk >= 50) {
+    kAnonymityEstimate = 'mittel';
+    kValue = '50-500';
+  } else if (deanonymizationRisk >= 20) {
+    kAnonymityEstimate = 'gut';
+    kValue = '500-5000';
+  } else {
+    kAnonymityEstimate = 'hoch';
+    kValue = '>5000';
+  }
+
+  // Sort by uniqueness score (highest risk first)
+  contributingFactors.sort((a, b) => b.uniquenessScore - a.uniquenessScore);
+
+  const explanation = deanonymizationRisk >= 80
+    ? 'Die Kombination der Daten macht dich nahezu eindeutig identifizierbar'
+    : deanonymizationRisk >= 50
+    ? 'Mit diesen Daten kannst du wahrscheinlich identifiziert werden'
+    : deanonymizationRisk >= 20
+    ? 'Einige Datenpunkte erhöhen das Identifikationsrisiko'
+    : 'Geringes Risiko einer Identifikation durch diese Daten';
+
+  return {
+    deanonymizationRisk,
+    kAnonymityEstimate,
+    kValue,
+    explanation,
+    contributingFactors
+  };
+}
+
+// Simulate potential data breach scenarios
+function simulateBreachScenarios(findings) {
+  if (!findings || findings.length === 0) {
+    return {
+      applicableScenarios: [],
+      overallBreachRisk: 0,
+      highestRiskScenario: null
+    };
+  }
+
+  const foundTypes = findings.map(f => f.type);
+  const applicableScenarios = [];
+
+  for (const scenario of BREACH_SCENARIOS) {
+    // Check how many relevant data types are present
+    const matchingTypes = scenario.relevantTypes.filter(t => foundTypes.includes(t));
+
+    if (matchingTypes.length > 0) {
+      // Calculate scenario-specific risk based on data overlap
+      const overlapRatio = matchingTypes.length / scenario.relevantTypes.length;
+      const adjustedProbability = scenario.probability * (0.5 + 0.5 * overlapRatio);
+
+      applicableScenarios.push({
+        ...scenario,
+        matchingDataTypes: matchingTypes,
+        dataOverlapRatio: Math.round(overlapRatio * 100),
+        adjustedProbability: Math.round(adjustedProbability * 100),
+        riskLevel: adjustedProbability >= 0.4 ? 'hoch' : adjustedProbability >= 0.2 ? 'mittel' : 'niedrig'
+      });
+    }
+  }
+
+  // Sort by adjusted probability (highest risk first)
+  applicableScenarios.sort((a, b) => b.adjustedProbability - a.adjustedProbability);
+
+  // Calculate overall breach risk (at least one scenario occurring)
+  const overallBreachRisk = applicableScenarios.length > 0
+    ? Math.round(applicableScenarios.reduce((max, s) => Math.max(max, s.adjustedProbability), 0))
+    : 0;
+
+  return {
+    applicableScenarios,
+    overallBreachRisk,
+    highestRiskScenario: applicableScenarios.length > 0 ? applicableScenarios[0] : null,
+    totalScenariosEvaluated: BREACH_SCENARIOS.length
+  };
+}
+
+// Predict future risk timeline
+function predictFutureRisk(findings, deanonRisk) {
+  if (!findings || findings.length === 0) {
+    return {
+      timeline: [],
+      longTermRisk: 'niedrig',
+      dataDecay: 'Keine sensiblen Daten zur Bewertung'
+    };
+  }
+
+  const timeline = [];
+
+  // Immediate risks (0-24 hours)
+  const immediateTypes = ['password', 'api_key', 'credit_card', 'gps_coordinates'];
+  const immediateFindings = findings.filter(f => immediateTypes.includes(f.type));
+  if (immediateFindings.length > 0) {
+    timeline.push({
+      period: '0-24 Stunden',
+      riskLevel: 'kritisch',
+      risks: [
+        'Sofortige Nutzung von Zugangsdaten möglich',
+        'Standortverfolgung in Echtzeit',
+        'Finanztransaktionen können unmittelbar erfolgen'
+      ],
+      action: 'Sofort handeln: Passwörter ändern, Karten sperren'
+    });
+  }
+
+  // Short-term risks (1-7 days)
+  const shortTermTypes = ['iban', 'phone', 'email', 'employer'];
+  const shortTermFindings = findings.filter(f => shortTermTypes.includes(f.type));
+  if (shortTermFindings.length > 0 || immediateFindings.length > 0) {
+    timeline.push({
+      period: '1-7 Tage',
+      riskLevel: 'hoch',
+      risks: [
+        'Phishing-Angriffe basierend auf gesammelten Daten',
+        'SEPA-Lastschriftbetrug möglich',
+        'Spam und unerwünschte Kontakte'
+      ],
+      action: 'Bank informieren, Spam-Filter verschärfen'
+    });
+  }
+
+  // Medium-term risks (1-4 weeks)
+  const mediumTermTypes = ['national_id', 'passport', 'tax_id', 'social_security', 'address'];
+  const mediumTermFindings = findings.filter(f => mediumTermTypes.includes(f.type));
+  if (mediumTermFindings.length > 0) {
+    timeline.push({
+      period: '1-4 Wochen',
+      riskLevel: 'mittel-hoch',
+      risks: [
+        'Identitätsmissbrauch wird vorbereitet',
+        'Kredit-/Kontoeröffnungen unter falschem Namen',
+        'Daten erscheinen in Untergrundforen'
+      ],
+      action: 'SCHUFA-Warnung aktivieren, Behörden informieren'
+    });
+  }
+
+  // Long-term risks (1-12 months)
+  const persistentTypes = ['date_of_birth', 'health', 'health_insurance', 'child'];
+  const persistentFindings = findings.filter(f => persistentTypes.includes(f.type));
+  if (deanonRisk > 50 || persistentFindings.length > 0) {
+    timeline.push({
+      period: '1-12 Monate',
+      riskLevel: 'mittel',
+      risks: [
+        'Langfristige Profilerstellung',
+        'Diskriminierung basierend auf Gesundheitsdaten',
+        'Daten in Data-Broker-Datenbanken'
+      ],
+      action: 'Regelmäßige Auskunftsanfragen, Löschungsanträge stellen'
+    });
+  }
+
+  // Very long-term (1+ years)
+  if (deanonRisk > 30) {
+    timeline.push({
+      period: '1+ Jahre',
+      riskLevel: 'niedrig-mittel',
+      risks: [
+        'Daten werden Teil permanenter Datenbanken',
+        'Zukünftige KI-Systeme können alte Daten korrelieren',
+        'Reputationsschäden durch alte Informationen'
+      ],
+      action: 'Digitale Identität regelmäßig überprüfen'
+    });
+  }
+
+  // Determine long-term risk level
+  let longTermRisk = 'niedrig';
+  if (timeline.some(t => t.riskLevel === 'kritisch')) {
+    longTermRisk = 'sehr hoch';
+  } else if (timeline.some(t => t.riskLevel === 'hoch')) {
+    longTermRisk = 'hoch';
+  } else if (timeline.some(t => t.riskLevel === 'mittel-hoch' || t.riskLevel === 'mittel')) {
+    longTermRisk = 'mittel';
+  }
+
+  // Data decay info
+  const dataDecayInfo = {
+    'password': 'Sollte sofort geändert werden - dann wertlos',
+    'api_key': 'Sollte sofort rotiert werden - dann wertlos',
+    'gps_coordinates': 'Veraltet nach Standortwechsel',
+    'vacation_hint': 'Veraltet nach Rückkehr',
+    'phone': 'Bleibt oft Jahre gültig',
+    'email': 'Bleibt oft Jahre gültig',
+    'iban': 'Bleibt lange gültig (Konto behalten)',
+    'national_id': 'Gültig bis Dokumentenablauf (Jahre)',
+    'date_of_birth': 'Permanent gültig',
+    'tax_id': 'Lebenslang gültig'
+  };
+
+  const dataDecay = findings.map(f => ({
+    type: f.type,
+    decay: dataDecayInfo[f.type] || 'Variabel'
+  }));
+
+  return {
+    timeline,
+    longTermRisk,
+    dataDecay
+  };
+}
+
+// Simulate correlation attack possibilities
+function simulateCorrelationAttacks(findings) {
+  if (!findings || findings.length === 0) {
+    return {
+      possibleAttacks: [],
+      correlationRisk: 0,
+      recommendation: 'Keine Korrelationsrisiken identifiziert'
+    };
+  }
+
+  const foundTypes = findings.map(f => f.type);
+  const possibleAttacks = [];
+
+  for (const method of CORRELATION_METHODS) {
+    // Check for matching data points
+    const matchingPoints = method.dataPoints.filter(dp =>
+      foundTypes.some(ft => dp.includes(ft) || ft.includes(dp))
+    );
+
+    if (matchingPoints.length > 0) {
+      const applicability = matchingPoints.length / method.dataPoints.length;
+
+      possibleAttacks.push({
+        id: method.id,
+        name: method.name,
+        description: method.description,
+        difficulty: method.difficulty,
+        effectiveness: Math.round(method.effectiveness * applicability * 100),
+        matchingDataPoints: matchingPoints,
+        example: method.example
+      });
+    }
+  }
+
+  // Sort by effectiveness
+  possibleAttacks.sort((a, b) => b.effectiveness - a.effectiveness);
+
+  // Calculate overall correlation risk
+  const correlationRisk = possibleAttacks.length > 0
+    ? Math.min(100, possibleAttacks.reduce((sum, a) => sum + a.effectiveness, 0) / possibleAttacks.length)
+    : 0;
+
+  let recommendation;
+  if (correlationRisk >= 70) {
+    recommendation = 'Hohes Korrelationsrisiko: Daten können leicht mit anderen Quellen verknüpft werden. Nutze Pseudonyme und verteile Informationen auf getrennte Identitäten.';
+  } else if (correlationRisk >= 40) {
+    recommendation = 'Mittleres Korrelationsrisiko: Einige Datenpunkte können verknüpft werden. Achte auf konsistente Privacy-Einstellungen.';
+  } else if (correlationRisk > 0) {
+    recommendation = 'Niedriges Korrelationsrisiko: Begrenzte Verknüpfungsmöglichkeiten, aber Vorsicht bei weiteren Veröffentlichungen.';
+  } else {
+    recommendation = 'Keine signifikanten Korrelationsrisiken identifiziert.';
+  }
+
+  return {
+    possibleAttacks,
+    correlationRisk: Math.round(correlationRisk),
+    recommendation,
+    methodsEvaluated: CORRELATION_METHODS.length
+  };
 }
 
 // API v2: Analyze endpoint
@@ -1287,7 +1846,7 @@ app.get('/api/v2/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '4.0.0',
+    version: '5.0.0',
     timestamp: new Date().toISOString(),
     providers: {
       openai: {
@@ -1316,17 +1875,25 @@ app.get('/api/v2/health', (req, res) => {
       languages: SUPPORTED_LANGUAGES,
       default: DEFAULT_LANGUAGE
     },
+    predictivePrivacy: {
+      enabled: true,
+      riskFactors: Object.keys(RISK_FACTORS).length,
+      breachScenarios: BREACH_SCENARIOS.length,
+      correlationMethods: CORRELATION_METHODS.length,
+      features: ['deanonymization', 'breachSimulation', 'futureRiskTimeline', 'correlationAttacks']
+    },
     pwa: {
       offlinePatternsEndpoint: '/api/v2/patterns/offline',
       pingEndpoint: '/api/v2/ping'
     },
     rateLimits: {
       quickCheck: '60/min (recommended)',
-      fullAnalysis: '10/min (recommended)'
+      fullAnalysis: '10/min (recommended)',
+      predictiveAnalysis: '5/min (recommended)'
     },
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
-      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health', '/api/v2/languages', '/api/v2/ping', '/api/v2/patterns/offline']
+      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/analyze/predictive', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health', '/api/v2/languages', '/api/v2/ping', '/api/v2/patterns/offline', '/api/v2/risk-factors', '/api/v2/breach-scenarios', '/api/v2/correlation-methods']
     }
   });
 });
@@ -1357,7 +1924,7 @@ app.get('/api/v2/patterns', (req, res) => {
   });
 
   res.json({
-    version: '4.0',
+    version: '5.0',
     patternCount: patterns.length,
     bySeverity,
     byCategory,
@@ -1411,7 +1978,7 @@ app.get('/api/v2/patterns/offline', (req, res) => {
   }
 
   res.json({
-    version: '4.0.0',
+    version: '5.0.0',
     lang,
     lastUpdated: new Date().toISOString(),
     patterns,
@@ -1667,6 +2234,299 @@ app.post('/api/v2/analyze/batch', async (req, res) => {
       details: error.message
     });
   }
+});
+
+// ===========================================
+// API v2 - Phase 5 Endpoints (Predictive Privacy)
+// ===========================================
+
+// POST /api/v2/analyze/predictive - Predictive Privacy Analysis
+app.post('/api/v2/analyze/predictive', async (req, res) => {
+  try {
+    const { text, context = 'default', lang: requestLang, options = {} } = req.body;
+
+    // Validate and set language
+    const lang = SUPPORTED_LANGUAGES.includes(requestLang) ? requestLang : DEFAULT_LANGUAGE;
+
+    if (!text || text.trim().length === 0) {
+      return res.status(400).json({
+        error: lang === 'en' ? 'No text provided for analysis' :
+               lang === 'de' ? 'Kein Text zum Analysieren angegeben' :
+               'Kein Text zum Analysieren angegeben'
+      });
+    }
+
+    const startTime = Date.now();
+
+    // Step 1: Detect patterns (same as standard analysis)
+    const patternFindings = detectPatterns(text);
+
+    // Step 2: GPT-based semantic analysis (unless quickCheck)
+    let gptFindings = [];
+    if (!options.quickCheck) {
+      try {
+        const userPrompt = `Kontext: ${context}\nText: "${text}"`;
+        const aiResponse = await callAIWithFallback([
+          { role: 'system', content: ANALYZE_V2_SYSTEM_PROMPT },
+          { role: 'user', content: userPrompt }
+        ]);
+
+        let gptResult;
+        try {
+          gptResult = JSON.parse(aiResponse.content);
+        } catch {
+          const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
+          if (jsonMatch) {
+            gptResult = JSON.parse(jsonMatch[0]);
+          }
+        }
+
+        if (gptResult && gptResult.findings) {
+          gptFindings = gptResult.findings.map(f => ({
+            type: f.type,
+            severity: f.severity,
+            match: f.match,
+            position: { start: f.start, end: f.end },
+            message: f.message,
+            suggestion: f.suggestion
+          }));
+        }
+      } catch (gptError) {
+        console.error('Predictive GPT-Analyse Fehler:', gptError.message);
+      }
+    }
+
+    // Step 3: Combine all findings
+    const allFindings = [...patternFindings, ...gptFindings];
+
+    // Step 4: Calculate standard risk metrics
+    const riskScore = calculateRiskScore(allFindings);
+    const riskLevel = getRiskLevel(riskScore);
+
+    // Step 5: Calculate deanonymization risk
+    const deanonymization = calculateDeanonymizationRisk(allFindings);
+
+    // Step 6: Simulate breach scenarios
+    const breachSimulation = simulateBreachScenarios(allFindings);
+
+    // Step 7: Predict future risk timeline
+    const futureRisk = predictFutureRisk(allFindings, deanonymization.deanonymizationRisk);
+
+    // Step 8: Simulate correlation attacks
+    const correlationAttacks = simulateCorrelationAttacks(allFindings);
+
+    // Step 9: Generate overall predictive assessment
+    const overallAssessment = generatePredictiveAssessment(
+      riskScore,
+      deanonymization.deanonymizationRisk,
+      breachSimulation.overallBreachRisk,
+      correlationAttacks.correlationRisk
+    );
+
+    // Build response
+    res.json({
+      // Standard analysis results
+      standardAnalysis: {
+        riskScore,
+        riskLevel,
+        summary: getLocalizedSummary(allFindings.length, lang),
+        findingsCount: allFindings.length,
+        categories: allFindings.map(finding => {
+          const localized = getLocalizedCategory(finding.type, lang);
+          return {
+            ...finding,
+            message: localized.message || finding.message,
+            suggestion: localized.suggestion || finding.suggestion
+          };
+        })
+      },
+
+      // Predictive analysis results
+      predictiveAnalysis: {
+        // Deanonymization risk (k-Anonymity)
+        deanonymization: {
+          risk: deanonymization.deanonymizationRisk,
+          kAnonymity: {
+            estimate: deanonymization.kAnonymityEstimate,
+            kValue: deanonymization.kValue
+          },
+          explanation: deanonymization.explanation,
+          contributingFactors: deanonymization.contributingFactors.slice(0, 5)
+        },
+
+        // Breach scenario simulation
+        breachSimulation: {
+          overallRisk: breachSimulation.overallBreachRisk,
+          highestRisk: breachSimulation.highestRiskScenario ? {
+            name: breachSimulation.highestRiskScenario.name,
+            probability: breachSimulation.highestRiskScenario.adjustedProbability,
+            consequences: breachSimulation.highestRiskScenario.consequences
+          } : null,
+          applicableScenarios: breachSimulation.applicableScenarios.slice(0, 3).map(s => ({
+            id: s.id,
+            name: s.name,
+            probability: s.adjustedProbability,
+            riskLevel: s.riskLevel,
+            matchingData: s.matchingDataTypes,
+            mitigations: s.mitigations
+          }))
+        },
+
+        // Future risk timeline
+        futureRisk: {
+          longTermRisk: futureRisk.longTermRisk,
+          timeline: futureRisk.timeline,
+          dataDecay: futureRisk.dataDecay.slice(0, 5)
+        },
+
+        // Correlation attack analysis
+        correlationRisk: {
+          risk: correlationAttacks.correlationRisk,
+          recommendation: correlationAttacks.recommendation,
+          possibleAttacks: correlationAttacks.possibleAttacks.slice(0, 3).map(a => ({
+            name: a.name,
+            effectiveness: a.effectiveness,
+            difficulty: a.difficulty,
+            example: a.example
+          }))
+        },
+
+        // Overall assessment
+        overallAssessment
+      },
+
+      meta: {
+        mode: options.quickCheck ? 'quickCheck' : 'fullAnalysis',
+        lang,
+        processingTime: Date.now() - startTime,
+        version: '5.0.0'
+      }
+    });
+
+  } catch (error) {
+    console.error('Predictive Analysis Fehler:', error);
+    res.status(500).json({
+      error: 'Predictive Analyse fehlgeschlagen',
+      details: error.message
+    });
+  }
+});
+
+// Helper: Generate overall predictive assessment
+function generatePredictiveAssessment(riskScore, deanonRisk, breachRisk, correlationRisk) {
+  const avgRisk = Math.round((100 - riskScore + deanonRisk + breachRisk + correlationRisk) / 4);
+
+  let level, summary, recommendations;
+
+  if (avgRisk >= 75) {
+    level = 'kritisch';
+    summary = 'Sehr hohe Gefährdung der Privatsphäre. Sofortiges Handeln erforderlich.';
+    recommendations = [
+      'Sensible Daten sofort aus dem Text entfernen',
+      'Betroffene Passwörter/Keys umgehend ändern',
+      'Finanzinstitute bei Bankdaten-Leak informieren',
+      'Text vor dem Teilen komplett überarbeiten'
+    ];
+  } else if (avgRisk >= 50) {
+    level = 'hoch';
+    summary = 'Erhöhtes Privatsphäre-Risiko. Änderungen dringend empfohlen.';
+    recommendations = [
+      'Identifizierende Informationen entfernen',
+      'Kontext-Informationen reduzieren',
+      'Pseudonyme statt echter Namen verwenden',
+      'Standortdaten vermeiden'
+    ];
+  } else if (avgRisk >= 25) {
+    level = 'mittel';
+    summary = 'Moderate Privatsphäre-Risiken vorhanden. Überprüfung empfohlen.';
+    recommendations = [
+      'Prüfen ob alle Informationen nötig sind',
+      'Empfängerkreis einschränken',
+      'Sensible Details verallgemeinern'
+    ];
+  } else {
+    level = 'niedrig';
+    summary = 'Geringes Privatsphäre-Risiko. Grundlegende Vorsicht beachten.';
+    recommendations = [
+      'Standardmäßig sparsam mit Daten umgehen',
+      'Regelmäßig Privacy-Einstellungen prüfen'
+    ];
+  }
+
+  return {
+    level,
+    averageRisk: avgRisk,
+    summary,
+    recommendations,
+    breakdown: {
+      privacyScore: riskScore,
+      deanonymizationRisk: deanonRisk,
+      breachRisk,
+      correlationRisk
+    }
+  };
+}
+
+// GET /api/v2/risk-factors - List all risk factors with uniqueness scores
+app.get('/api/v2/risk-factors', (req, res) => {
+  const factors = Object.entries(RISK_FACTORS).map(([type, data]) => ({
+    type,
+    ...data
+  }));
+
+  // Group by category
+  const byCategory = {};
+  factors.forEach(f => {
+    if (!byCategory[f.category]) {
+      byCategory[f.category] = [];
+    }
+    byCategory[f.category].push(f);
+  });
+
+  // Sort each category by uniqueness score
+  for (const category of Object.keys(byCategory)) {
+    byCategory[category].sort((a, b) => b.uniquenessScore - a.uniquenessScore);
+  }
+
+  res.json({
+    totalFactors: factors.length,
+    categories: Object.keys(byCategory),
+    byCategory,
+    allFactors: factors.sort((a, b) => b.uniquenessScore - a.uniquenessScore)
+  });
+});
+
+// GET /api/v2/breach-scenarios - List all breach scenarios
+app.get('/api/v2/breach-scenarios', (req, res) => {
+  res.json({
+    totalScenarios: BREACH_SCENARIOS.length,
+    scenarios: BREACH_SCENARIOS.map(s => ({
+      id: s.id,
+      name: s.name,
+      description: s.description,
+      baseProbability: Math.round(s.probability * 100),
+      relevantDataTypes: s.relevantTypes,
+      consequences: s.consequences,
+      timeToImpact: s.timeToImpact,
+      mitigations: s.mitigations
+    }))
+  });
+});
+
+// GET /api/v2/correlation-methods - List all correlation attack methods
+app.get('/api/v2/correlation-methods', (req, res) => {
+  res.json({
+    totalMethods: CORRELATION_METHODS.length,
+    methods: CORRELATION_METHODS.map(m => ({
+      id: m.id,
+      name: m.name,
+      description: m.description,
+      dataPoints: m.dataPoints,
+      difficulty: m.difficulty,
+      baseEffectiveness: Math.round(m.effectiveness * 100),
+      example: m.example
+    }))
+  });
 });
 
 // Server starten
