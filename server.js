@@ -33,6 +33,65 @@ const providerStatus = {
   anthropic: { available: !!anthropic, lastError: null, lastCheck: Date.now() }
 };
 
+// Quick Check Cache (in-memory, 5 min TTL)
+const quickCheckCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const MAX_CACHE_SIZE = 1000;
+
+// Cache statistics
+const cacheStats = {
+  hits: 0,
+  misses: 0,
+  size: 0
+};
+
+function getCacheKey(text, context) {
+  // Simple hash for cache key
+  let hash = 0;
+  const str = text + '|' + context;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return hash.toString(36);
+}
+
+function getFromCache(key) {
+  const entry = quickCheckCache.get(key);
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
+    cacheStats.hits++;
+    return entry.data;
+  }
+  if (entry) {
+    quickCheckCache.delete(key);
+    cacheStats.size--;
+  }
+  cacheStats.misses++;
+  return null;
+}
+
+function setCache(key, data) {
+  // Evict oldest entries if cache is full
+  if (quickCheckCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = quickCheckCache.keys().next().value;
+    quickCheckCache.delete(oldestKey);
+  }
+  quickCheckCache.set(key, { data, timestamp: Date.now() });
+  cacheStats.size = quickCheckCache.size;
+}
+
+// Periodic cache cleanup (every 5 minutes)
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of quickCheckCache.entries()) {
+    if (now - entry.timestamp > CACHE_TTL) {
+      quickCheckCache.delete(key);
+    }
+  }
+  cacheStats.size = quickCheckCache.size;
+}, CACHE_TTL);
+
 // Middleware
 app.use(cors({
   origin: ['https://achtung.live', 'http://localhost:3000', 'http://localhost:8888'],
@@ -237,6 +296,36 @@ const PATTERNS = {
     category: 'location',
     message: 'Kfz-Kennzeichen erkannt',
     suggestion: 'Kennzeichen können zur Identifizierung genutzt werden'
+  },
+  address: {
+    regex: /\b(?:Straße|Str\.|Weg|Platz|Allee|Gasse|Ring|Ufer|Damm|Chaussee)\s+\d+[a-z]?\b/gi,
+    severity: 'medium',
+    category: 'location',
+    message: 'Straßenadresse erkannt',
+    suggestion: 'Adressen können zur Lokalisierung genutzt werden'
+  },
+  postal_code: {
+    regex: /\b\d{5}\s+[A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?\b/g,
+    severity: 'low',
+    category: 'location',
+    message: 'Postleitzahl mit Ort erkannt',
+    suggestion: 'PLZ+Ort ermöglicht grobe Standortbestimmung'
+  },
+
+  // === Context/Behavior ===
+  vacation_hint: {
+    regex: /(?:urlaub|verreist|nicht\s+(?:zu\s+)?hause|weg\s+(?:vom|von)|abwesend|unterwegs\s+nach|fliege\s+(?:nach|morgen)|bin\s+(?:weg|nicht\s+da))/gi,
+    severity: 'medium',
+    category: 'context',
+    message: 'Abwesenheitshinweis erkannt - Einbrecher könnten dies nutzen',
+    suggestion: 'Abwesenheiten erst nach Rückkehr posten'
+  },
+  german_date: {
+    regex: /\b\d{1,2}\.\d{1,2}\.\d{2,4}\b/g,
+    severity: 'low',
+    category: 'personal',
+    message: 'Datum erkannt',
+    suggestion: 'Daten können zur Identifizierung beitragen'
   }
 };
 
@@ -270,7 +359,12 @@ const CATEGORY_GROUPS = {
   location: {
     name: 'Standortdaten',
     description: 'Geografische und Fahrzeuginformationen',
-    types: ['gps_coordinates', 'license_plate']
+    types: ['gps_coordinates', 'license_plate', 'address', 'postal_code']
+  },
+  context: {
+    name: 'Kontextbezogene Risiken',
+    description: 'Verhaltens- und situationsbezogene Informationen',
+    types: ['vacation_hint', 'german_date']
   },
   semantic: {
     name: 'Semantische Erkennung (GPT)',
@@ -362,10 +456,11 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '2.1.0',
+    version: '3.0.0',
+    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback'],
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
-      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/categories', '/api/v2/health']
+      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health']
     }
   });
 });
@@ -520,9 +615,11 @@ function detectPatterns(text) {
     // Digital
     'api_key', 'password', 'username', 'ip_address', 'mac_address',
     // Personal
-    'phone', 'email', 'date_of_birth', 'age',
+    'phone', 'email', 'date_of_birth', 'age', 'german_date',
     // Location
-    'gps_coordinates', 'license_plate'
+    'gps_coordinates', 'license_plate', 'address', 'postal_code',
+    // Context
+    'vacation_hint'
   ];
 
   // Types that should not overlap with financial data
@@ -614,6 +711,7 @@ app.post('/api/v2/analyze', async (req, res) => {
   try {
     const { text, context = 'default', options = {} } = req.body;
     const includeRewrite = options.includeRewrite === true;
+    const quickCheck = options.quickCheck === true;
 
     if (!text || text.trim().length === 0) {
       return res.status(400).json({
@@ -621,6 +719,49 @@ app.post('/api/v2/analyze', async (req, res) => {
       });
     }
 
+    const startTime = Date.now();
+
+    // Quick Check Mode: Regex-only, no LLM, with caching
+    if (quickCheck) {
+      const cacheKey = getCacheKey(text, context);
+      const cached = getFromCache(cacheKey);
+
+      if (cached) {
+        return res.json({
+          ...cached,
+          meta: {
+            ...cached.meta,
+            cached: true
+          }
+        });
+      }
+
+      // Pattern-based detection only
+      const patternFindings = detectPatterns(text);
+      const riskScore = calculateRiskScore(patternFindings);
+      const riskLevel = getRiskLevel(riskScore);
+
+      const result = {
+        riskScore,
+        riskLevel,
+        summary: `${patternFindings.length} potenzielle Risiken erkannt`,
+        categories: patternFindings,
+        contextWarning: CONTEXT_WARNINGS[context.toLowerCase()] || CONTEXT_WARNINGS.default,
+        meta: {
+          mode: 'quickCheck',
+          processingTime: Date.now() - startTime,
+          patternsChecked: Object.keys(PATTERNS).length,
+          cached: false
+        }
+      };
+
+      // Cache the result
+      setCache(cacheKey, result);
+
+      return res.json(result);
+    }
+
+    // Full Analysis Mode: Regex + LLM
     // Step 1: Pattern-based detection
     const patternFindings = detectPatterns(text);
 
@@ -694,7 +835,13 @@ app.post('/api/v2/analyze', async (req, res) => {
       riskLevel,
       summary,
       categories: allCategories,
-      contextWarning
+      contextWarning,
+      meta: {
+        mode: 'fullAnalysis',
+        processingTime: Date.now() - startTime,
+        patternsChecked: Object.keys(PATTERNS).length,
+        semanticAnalysis: gptFindings.length > 0
+      }
     };
 
     // Step 8: Include rewrite if requested
@@ -893,28 +1040,80 @@ app.get('/api/v2/categories', (req, res) => {
 
 // GET /api/v2/health - API and provider health status
 app.get('/api/v2/health', (req, res) => {
+  const totalRequests = cacheStats.hits + cacheStats.misses;
+  const cacheHitRate = totalRequests > 0
+    ? ((cacheStats.hits / totalRequests) * 100).toFixed(1) + '%'
+    : '0%';
+
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '2.1.0',
+    version: '3.0.0',
     timestamp: new Date().toISOString(),
     providers: {
       openai: {
         available: providerStatus.openai.available,
+        model: 'gpt-4o-mini',
         lastCheck: new Date(providerStatus.openai.lastCheck).toISOString(),
         lastError: providerStatus.openai.lastError
       },
       anthropic: {
         configured: !!anthropic,
         available: providerStatus.anthropic.available,
+        model: 'claude-3-haiku-20240307',
         lastCheck: new Date(providerStatus.anthropic.lastCheck).toISOString(),
         lastError: providerStatus.anthropic.lastError
       }
     },
+    quickCheck: {
+      enabled: true,
+      patternsLoaded: Object.keys(PATTERNS).length,
+      cacheSize: cacheStats.size,
+      cacheHitRate,
+      cacheTTL: '5 minutes'
+    },
+    rateLimits: {
+      quickCheck: '60/min (recommended)',
+      fullAnalysis: '10/min (recommended)'
+    },
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
-      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/categories', '/api/v2/health']
+      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health']
     }
+  });
+});
+
+// GET /api/v2/patterns - List all active detection patterns
+app.get('/api/v2/patterns', (req, res) => {
+  const patterns = Object.entries(PATTERNS).map(([type, config]) => ({
+    type,
+    severity: config.severity,
+    category: config.category,
+    message: config.message,
+    suggestion: config.suggestion
+    // Note: regex is intentionally not exposed for security
+  }));
+
+  // Group by severity
+  const bySeverity = {
+    critical: patterns.filter(p => p.severity === 'critical').length,
+    high: patterns.filter(p => p.severity === 'high').length,
+    medium: patterns.filter(p => p.severity === 'medium').length,
+    low: patterns.filter(p => p.severity === 'low').length
+  };
+
+  // Group by category
+  const byCategory = {};
+  patterns.forEach(p => {
+    byCategory[p.category] = (byCategory[p.category] || 0) + 1;
+  });
+
+  res.json({
+    version: '3.0',
+    patternCount: patterns.length,
+    bySeverity,
+    byCategory,
+    patterns
   });
 });
 
