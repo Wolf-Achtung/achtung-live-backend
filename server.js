@@ -300,16 +300,38 @@ app.get('/howto', (req, res) => {
 // API v2 - /api/v2/analyze Endpoint
 // ===========================================
 
+// Helper: Check if a position range overlaps with any existing findings
+function overlapsWithExisting(start, end, existingFindings) {
+  for (const finding of existingFindings) {
+    const fStart = finding.position.start;
+    const fEnd = finding.position.end;
+    // Check for any overlap
+    if (start < fEnd && end > fStart) {
+      return true;
+    }
+  }
+  return false;
+}
+
 // Helper: Detect patterns using regex
 function detectPatterns(text) {
   const findings = [];
 
-  for (const [type, config] of Object.entries(PATTERNS)) {
+  // Define detection order: IBANs and credit cards first to prevent false positives
+  const detectionOrder = ['iban', 'credit_card', 'phone', 'email', 'password'];
+
+  for (const type of detectionOrder) {
+    const config = PATTERNS[type];
+    if (!config) continue;
+
     // Reset regex lastIndex for global patterns
     config.regex.lastIndex = 0;
     let match;
 
     while ((match = config.regex.exec(text)) !== null) {
+      const matchStart = match.index;
+      const matchEnd = match.index + match[0].length;
+
       // Special validation for credit cards (Luhn check)
       if (type === 'credit_card') {
         const digits = match[0].replace(/\D/g, '');
@@ -318,13 +340,18 @@ function detectPatterns(text) {
         }
       }
 
+      // Skip phone/email matches that overlap with already detected IBANs or credit cards
+      if ((type === 'phone' || type === 'email') && overlapsWithExisting(matchStart, matchEnd, findings)) {
+        continue;
+      }
+
       findings.push({
         type,
         severity: config.severity,
         match: match[0],
         position: {
-          start: match.index,
-          end: match.index + match[0].length
+          start: matchStart,
+          end: matchEnd
         },
         message: config.message,
         suggestion: config.suggestion
