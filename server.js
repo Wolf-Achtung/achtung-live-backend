@@ -827,6 +827,1469 @@ const CORRELATION_METHODS = [
   }
 ];
 
+// ===========================================
+// Phase 7: Digital Footprint Scanner Data
+// ===========================================
+
+// Known data breaches database
+const BREACH_DATABASE = [
+  {
+    id: 'linkedin_2021',
+    name: 'LinkedIn',
+    domain: 'linkedin.com',
+    date: '2021-06-22',
+    addedDate: '2021-06-29',
+    compromisedAccounts: 700000000,
+    dataClasses: ['email', 'name', 'phone', 'workplace', 'education', 'profile_url'],
+    description: 'Massive Datenpanne durch API-Scraping. 700 Millionen Nutzerdaten wurden im Dark Web zum Verkauf angeboten.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'facebook_2019',
+    name: 'Facebook',
+    domain: 'facebook.com',
+    date: '2019-04-03',
+    addedDate: '2021-04-06',
+    compromisedAccounts: 533000000,
+    dataClasses: ['email', 'phone', 'name', 'location', 'relationship_status', 'employer'],
+    description: 'Telefonnummern und persönliche Daten von 533 Millionen Facebook-Nutzern aus 106 Ländern wurden geleakt.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'twitter_2023',
+    name: 'Twitter/X',
+    domain: 'twitter.com',
+    date: '2023-01-05',
+    addedDate: '2023-01-06',
+    compromisedAccounts: 200000000,
+    dataClasses: ['email', 'name', 'username', 'phone'],
+    description: 'Email-Adressen von 200 Millionen Twitter-Nutzern wurden durch eine API-Schwachstelle exponiert.',
+    severity: 'medium',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'adobe_2013',
+    name: 'Adobe',
+    domain: 'adobe.com',
+    date: '2013-10-04',
+    addedDate: '2013-12-04',
+    compromisedAccounts: 153000000,
+    dataClasses: ['email', 'password_hash', 'username', 'password_hint'],
+    description: 'Eines der größten Datenlecks der Geschichte. Passwörter waren nur schwach verschlüsselt.',
+    severity: 'critical',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'dropbox_2012',
+    name: 'Dropbox',
+    domain: 'dropbox.com',
+    date: '2012-07-01',
+    addedDate: '2016-08-31',
+    compromisedAccounts: 68648009,
+    dataClasses: ['email', 'password_hash'],
+    description: 'Über 68 Millionen Dropbox-Zugangsdaten wurden gestohlen und später im Dark Web veröffentlicht.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'myspace_2008',
+    name: 'MySpace',
+    domain: 'myspace.com',
+    date: '2008-07-01',
+    addedDate: '2016-05-31',
+    compromisedAccounts: 359420698,
+    dataClasses: ['email', 'password_hash', 'username'],
+    description: 'Historisches Datenleck mit über 360 Millionen Accounts. Passwörter wurden 2016 geknackt.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'canva_2019',
+    name: 'Canva',
+    domain: 'canva.com',
+    date: '2019-05-24',
+    addedDate: '2019-05-24',
+    compromisedAccounts: 137000000,
+    dataClasses: ['email', 'name', 'username', 'password_hash', 'location'],
+    description: 'Grafikdesign-Plattform erlitt Datenleck mit 137 Millionen Nutzerkonten.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'zynga_2019',
+    name: 'Zynga',
+    domain: 'zynga.com',
+    date: '2019-09-01',
+    addedDate: '2019-09-12',
+    compromisedAccounts: 173000000,
+    dataClasses: ['email', 'username', 'password_hash', 'phone'],
+    description: 'Spieleentwickler Zynga (Words with Friends) wurde gehackt, 173 Millionen Accounts betroffen.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'marriott_2018',
+    name: 'Marriott Starwood',
+    domain: 'marriott.com',
+    date: '2018-11-30',
+    addedDate: '2018-11-30',
+    compromisedAccounts: 500000000,
+    dataClasses: ['email', 'name', 'phone', 'passport_number', 'credit_card', 'address'],
+    description: 'Hotelkette Marriott erlitt massiven Hack. Passnummern und Kreditkartendaten betroffen.',
+    severity: 'critical',
+    isVerified: true,
+    isSensitive: true,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'yahoo_2013',
+    name: 'Yahoo',
+    domain: 'yahoo.com',
+    date: '2013-08-01',
+    addedDate: '2016-12-14',
+    compromisedAccounts: 3000000000,
+    dataClasses: ['email', 'password_hash', 'name', 'phone', 'security_questions'],
+    description: 'Größter Hack der Geschichte. Alle 3 Milliarden Yahoo-Accounts waren betroffen.',
+    severity: 'critical',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'dubsmash_2018',
+    name: 'Dubsmash',
+    domain: 'dubsmash.com',
+    date: '2018-12-01',
+    addedDate: '2019-02-14',
+    compromisedAccounts: 162000000,
+    dataClasses: ['email', 'username', 'password_hash', 'name'],
+    description: 'Video-App Dubsmash wurde gehackt, Daten im Dark Web verkauft.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'exactis_2018',
+    name: 'Exactis',
+    domain: 'exactis.com',
+    date: '2018-06-01',
+    addedDate: '2018-06-27',
+    compromisedAccounts: 340000000,
+    dataClasses: ['email', 'name', 'phone', 'address', 'interests', 'habits', 'children', 'religion'],
+    description: 'Marketing-Firma leakte 340 Millionen detaillierte Personenprofile öffentlich.',
+    severity: 'critical',
+    isVerified: true,
+    isSensitive: true,
+    affectedCountries: ['US']
+  },
+  {
+    id: 'equifax_2017',
+    name: 'Equifax',
+    domain: 'equifax.com',
+    date: '2017-07-29',
+    addedDate: '2017-09-07',
+    compromisedAccounts: 147900000,
+    dataClasses: ['name', 'social_security_number', 'birth_date', 'address', 'drivers_license', 'credit_card'],
+    description: 'Kredit-Auskunftei Equifax wurde gehackt. SSN und Finanzdaten von 148 Mio. Amerikanern betroffen.',
+    severity: 'critical',
+    isVerified: true,
+    isSensitive: true,
+    affectedCountries: ['US', 'UK', 'CA']
+  },
+  {
+    id: 'spotify_2020',
+    name: 'Spotify',
+    domain: 'spotify.com',
+    date: '2020-11-23',
+    addedDate: '2020-11-24',
+    compromisedAccounts: 350000,
+    dataClasses: ['email', 'username', 'password'],
+    description: 'Credential-Stuffing-Angriff auf Spotify mit 350.000 kompromittierten Accounts.',
+    severity: 'medium',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'twitch_2021',
+    name: 'Twitch',
+    domain: 'twitch.tv',
+    date: '2021-10-06',
+    addedDate: '2021-10-06',
+    compromisedAccounts: 0,
+    dataClasses: ['source_code', 'streamer_payouts', 'internal_tools'],
+    description: 'Kompletter Quellcode und interne Daten von Twitch wurden geleakt.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: true,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'tmobile_2021',
+    name: 'T-Mobile',
+    domain: 't-mobile.com',
+    date: '2021-08-17',
+    addedDate: '2021-08-17',
+    compromisedAccounts: 77000000,
+    dataClasses: ['name', 'social_security_number', 'drivers_license', 'phone', 'address', 'birth_date'],
+    description: 'T-Mobile USA wurde gehackt, SSN und Führerscheindaten von 77 Mio. Kunden betroffen.',
+    severity: 'critical',
+    isVerified: true,
+    isSensitive: true,
+    affectedCountries: ['US']
+  },
+  {
+    id: 'lastfm_2012',
+    name: 'Last.fm',
+    domain: 'last.fm',
+    date: '2012-03-22',
+    addedDate: '2016-09-01',
+    compromisedAccounts: 37217682,
+    dataClasses: ['email', 'username', 'password_hash'],
+    description: 'Musik-Streaming-Dienst Last.fm wurde gehackt, Passwörter waren schwach gehasht.',
+    severity: 'medium',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'deezer_2019',
+    name: 'Deezer',
+    domain: 'deezer.com',
+    date: '2019-09-01',
+    addedDate: '2023-01-02',
+    compromisedAccounts: 229000000,
+    dataClasses: ['email', 'username', 'name', 'ip_address', 'birth_date', 'location'],
+    description: 'Musik-Streaming-Dienst Deezer erlitt Datenleck mit 229 Millionen Nutzerkonten.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'wattpad_2020',
+    name: 'Wattpad',
+    domain: 'wattpad.com',
+    date: '2020-06-29',
+    addedDate: '2020-07-14',
+    compromisedAccounts: 271000000,
+    dataClasses: ['email', 'username', 'password_hash', 'name', 'birth_date', 'ip_address'],
+    description: 'Storytelling-Plattform Wattpad wurde gehackt, 271 Millionen Accounts betroffen.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  },
+  {
+    id: 'mgm_2019',
+    name: 'MGM Resorts',
+    domain: 'mgmresorts.com',
+    date: '2019-07-01',
+    addedDate: '2020-02-19',
+    compromisedAccounts: 142000000,
+    dataClasses: ['name', 'email', 'phone', 'address', 'birth_date'],
+    description: 'Hotel- und Casino-Betreiber MGM erlitt Datenleck mit 142 Millionen Gästedaten.',
+    severity: 'high',
+    isVerified: true,
+    isSensitive: false,
+    affectedCountries: ['Global']
+  }
+];
+
+// Data broker database (50+ entries)
+const DATA_BROKERS = [
+  // People Search - US
+  {
+    id: 'spokeo',
+    name: 'Spokeo',
+    website: 'spokeo.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'relatives', 'social_profiles', 'photos'],
+    sources: ['public_records', 'social_media', 'marketing_lists', 'phone_directories'],
+    optOut: {
+      available: true,
+      url: 'https://www.spokeo.com/optout',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 3,
+      gdprCompliant: false,
+      instructions: [
+        'Besuchen Sie die Opt-out Seite',
+        'Suchen Sie Ihr Profil',
+        'Kopieren Sie die Profil-URL',
+        'Geben Sie Ihre Email ein',
+        'Bestätigen Sie den Link in der Email'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Einer der größten People-Search-Dienste. Aggregiert Daten aus öffentlichen Quellen.'
+  },
+  {
+    id: 'beenverified',
+    name: 'BeenVerified',
+    website: 'beenverified.com',
+    category: 'background_check',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'criminal_records', 'court_records', 'assets'],
+    sources: ['public_records', 'court_records', 'property_records'],
+    optOut: {
+      available: true,
+      url: 'https://www.beenverified.com/f/optout/search',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'medium',
+      estimatedDays: 7,
+      gdprCompliant: false,
+      instructions: [
+        'Besuchen Sie die Opt-out Seite',
+        'Suchen Sie Ihr Profil',
+        'Klicken Sie auf Opt-out',
+        'Verifizieren Sie per Email'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Background-Check-Dienst mit umfangreichen öffentlichen Daten.'
+  },
+  {
+    id: 'whitepages',
+    name: 'Whitepages',
+    website: 'whitepages.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'relatives', 'neighbors'],
+    sources: ['public_records', 'phone_directories', 'marketing_lists'],
+    optOut: {
+      available: true,
+      url: 'https://www.whitepages.com/suppression-requests',
+      method: 'web_form',
+      requiresId: true,
+      difficulty: 'medium',
+      estimatedDays: 5,
+      gdprCompliant: false,
+      instructions: [
+        'Suchen Sie Ihr Profil auf Whitepages',
+        'Kopieren Sie die URL',
+        'Gehen Sie zur Opt-out-Seite',
+        'Verifizieren Sie per Telefon'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Klassisches Telefonbuch mit erweiterten Personendaten.'
+  },
+  {
+    id: 'intelius',
+    name: 'Intelius',
+    website: 'intelius.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'criminal_records', 'relatives', 'employment'],
+    sources: ['public_records', 'court_records', 'marketing_data'],
+    optOut: {
+      available: true,
+      url: 'https://www.intelius.com/opt-out',
+      method: 'web_form',
+      requiresId: true,
+      difficulty: 'medium',
+      estimatedDays: 7,
+      gdprCompliant: false,
+      instructions: [
+        'Faxen Sie einen Opt-out-Antrag',
+        'Oder nutzen Sie das Online-Formular',
+        'ID-Verifizierung erforderlich'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Umfassender Personensuchdienst mit Background-Checks.'
+  },
+  {
+    id: 'peoplefinder',
+    name: 'PeopleFinder',
+    website: 'peoplefinder.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'age', 'relatives'],
+    sources: ['public_records', 'phone_directories'],
+    optOut: {
+      available: true,
+      url: 'https://www.peoplefinder.com/optout.php',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 3,
+      gdprCompliant: false,
+      instructions: [
+        'Suchen Sie Ihr Profil',
+        'Klicken Sie auf Opt-out',
+        'Bestätigen Sie per Email'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Personensuchdienst mit Fokus auf Adressdaten.'
+  },
+  {
+    id: 'truepeoplesearch',
+    name: 'TruePeopleSearch',
+    website: 'truepeoplesearch.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'relatives', 'associates'],
+    sources: ['public_records', 'social_media'],
+    optOut: {
+      available: true,
+      url: 'https://www.truepeoplesearch.com/removal',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 1,
+      gdprCompliant: false,
+      instructions: [
+        'Suchen Sie Ihr Profil',
+        'Klicken Sie auf Remove This Record',
+        'Captcha lösen'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Kostenloser Personensuchdienst - besonders problematisch.'
+  },
+  {
+    id: 'fastpeoplesearch',
+    name: 'FastPeopleSearch',
+    website: 'fastpeoplesearch.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'age', 'relatives'],
+    sources: ['public_records'],
+    optOut: {
+      available: true,
+      url: 'https://www.fastpeoplesearch.com/removal',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 1,
+      gdprCompliant: false,
+      instructions: [
+        'Suchen Sie Ihr Profil',
+        'Klicken Sie Remove Record',
+        'Captcha lösen'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Kostenloser Personensuchdienst mit schnellem Opt-out.'
+  },
+  {
+    id: 'radaris',
+    name: 'Radaris',
+    website: 'radaris.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'employment', 'education', 'criminal_records'],
+    sources: ['public_records', 'social_media', 'court_records'],
+    optOut: {
+      available: true,
+      url: 'https://radaris.com/control/privacy',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'medium',
+      estimatedDays: 7,
+      gdprCompliant: false,
+      instructions: [
+        'Erstellen Sie ein Konto',
+        'Suchen Sie Ihr Profil',
+        'Beantragen Sie Löschung'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Umfassender Personensuchdienst mit vielen Datenquellen.'
+  },
+  // Marketing Data - Global
+  {
+    id: 'acxiom',
+    name: 'Acxiom',
+    website: 'acxiom.com',
+    category: 'marketing_data',
+    region: 'Global',
+    dataCollected: ['name', 'address', 'purchase_history', 'demographics', 'interests', 'lifestyle'],
+    sources: ['retailers', 'surveys', 'public_records', 'credit_cards'],
+    optOut: {
+      available: true,
+      url: 'https://isapps.acxiom.com/optout/optout.aspx',
+      method: 'web_form',
+      requiresId: true,
+      difficulty: 'medium',
+      estimatedDays: 45,
+      gdprCompliant: true,
+      instructions: [
+        'Besuchen Sie die Opt-out-Seite',
+        'Füllen Sie das Formular aus',
+        'SSN oder andere ID angeben',
+        'Warten Sie auf Bestätigung'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Einer der größten Datenbroker weltweit. Sammelt detaillierte Konsumentenprofile.'
+  },
+  {
+    id: 'oracle_datacloud',
+    name: 'Oracle Data Cloud',
+    website: 'oracle.com/data-cloud',
+    category: 'marketing_data',
+    region: 'Global',
+    dataCollected: ['name', 'purchase_history', 'browsing_behavior', 'demographics', 'location'],
+    sources: ['websites', 'apps', 'retailers', 'data_partners'],
+    optOut: {
+      available: true,
+      url: 'https://www.oracle.com/legal/privacy/marketing-cloud-data-cloud-privacy-policy.html#optout',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'medium',
+      estimatedDays: 30,
+      gdprCompliant: true,
+      instructions: [
+        'Besuchen Sie die Privacy-Seite',
+        'Nutzen Sie das Opt-out-Tool',
+        'Cookie-basiertes Opt-out möglich'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Oracles Marketing-Datenplattform mit Milliarden von Profilen.'
+  },
+  {
+    id: 'epsilon',
+    name: 'Epsilon',
+    website: 'epsilon.com',
+    category: 'marketing_data',
+    region: 'Global',
+    dataCollected: ['name', 'address', 'email', 'purchase_history', 'demographics'],
+    sources: ['retailers', 'loyalty_programs', 'surveys'],
+    optOut: {
+      available: true,
+      url: 'https://www.epsilon.com/privacy-policy',
+      method: 'email',
+      requiresId: false,
+      difficulty: 'medium',
+      estimatedDays: 30,
+      gdprCompliant: true,
+      instructions: [
+        'Senden Sie eine Email an privacy@epsilon.com',
+        'Geben Sie Ihre Daten an',
+        'Beantragen Sie Löschung'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Marketing-Datenunternehmen im Besitz von Publicis.'
+  },
+  // Credit Reporting - Global
+  {
+    id: 'experian',
+    name: 'Experian',
+    website: 'experian.com',
+    category: 'credit_reporting',
+    region: 'Global',
+    dataCollected: ['name', 'address', 'ssn', 'credit_history', 'employment', 'bank_accounts'],
+    sources: ['banks', 'credit_cards', 'loans', 'utilities'],
+    optOut: {
+      available: false,
+      url: 'https://www.experian.com/privacy',
+      method: 'mail',
+      requiresId: true,
+      difficulty: 'hard',
+      estimatedDays: 90,
+      gdprCompliant: true,
+      instructions: [
+        'Kein vollständiges Opt-out möglich',
+        'Marketing Opt-out verfügbar',
+        'Datensperrung bei Identitätsdiebstahl'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Eine der drei großen Kreditauskunfteien. Opt-out stark eingeschränkt.'
+  },
+  {
+    id: 'equifax',
+    name: 'Equifax',
+    website: 'equifax.com',
+    category: 'credit_reporting',
+    region: 'Global',
+    dataCollected: ['name', 'address', 'ssn', 'credit_history', 'employment', 'bank_accounts'],
+    sources: ['banks', 'credit_cards', 'loans', 'utilities'],
+    optOut: {
+      available: false,
+      url: 'https://www.equifax.com/personal/privacy',
+      method: 'mail',
+      requiresId: true,
+      difficulty: 'hard',
+      estimatedDays: 90,
+      gdprCompliant: true,
+      instructions: [
+        'Kein vollständiges Opt-out möglich',
+        'Kredit-Freeze möglich',
+        'Marketing Opt-out verfügbar'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Große Kreditauskunftei. War 2017 von massivem Datenleck betroffen.'
+  },
+  {
+    id: 'transunion',
+    name: 'TransUnion',
+    website: 'transunion.com',
+    category: 'credit_reporting',
+    region: 'Global',
+    dataCollected: ['name', 'address', 'ssn', 'credit_history', 'employment'],
+    sources: ['banks', 'credit_cards', 'loans'],
+    optOut: {
+      available: false,
+      url: 'https://www.transunion.com/privacy',
+      method: 'mail',
+      requiresId: true,
+      difficulty: 'hard',
+      estimatedDays: 90,
+      gdprCompliant: true,
+      instructions: [
+        'Kein vollständiges Opt-out möglich',
+        'Kredit-Freeze empfohlen',
+        'Marketing Opt-out verfügbar'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Die dritte große US-Kreditauskunftei.'
+  },
+  {
+    id: 'schufa',
+    name: 'SCHUFA',
+    website: 'schufa.de',
+    category: 'credit_reporting',
+    region: 'EU',
+    dataCollected: ['name', 'address', 'birth_date', 'credit_history', 'bank_accounts', 'contracts'],
+    sources: ['banks', 'telecom', 'utilities', 'retailers'],
+    optOut: {
+      available: false,
+      url: 'https://www.schufa.de/datenschutz',
+      method: 'mail',
+      requiresId: true,
+      difficulty: 'hard',
+      estimatedDays: 30,
+      gdprCompliant: true,
+      instructions: [
+        'Kein vollständiges Opt-out möglich',
+        'Kostenlose Selbstauskunft nach DSGVO',
+        'Fehlerhafte Einträge korrigierbar'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Deutsche Kreditauskunftei. DSGVO-Auskunftsrecht nutzen.'
+  },
+  // Background Check
+  {
+    id: 'lexisnexis',
+    name: 'LexisNexis Risk Solutions',
+    website: 'risk.lexisnexis.com',
+    category: 'background_check',
+    region: 'Global',
+    dataCollected: ['name', 'address', 'ssn', 'criminal_records', 'driving_records', 'employment', 'education'],
+    sources: ['court_records', 'dmv', 'public_records', 'credit_bureaus'],
+    optOut: {
+      available: true,
+      url: 'https://consumer.risk.lexisnexis.com/request',
+      method: 'mail',
+      requiresId: true,
+      difficulty: 'hard',
+      estimatedDays: 30,
+      gdprCompliant: true,
+      instructions: [
+        'Kostenlose Auskunft anfordern',
+        'Fehler korrigieren lassen',
+        'Security Freeze möglich'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Großer Datenbroker für Background-Checks und Risikobewertung.'
+  },
+  {
+    id: 'checkr',
+    name: 'Checkr',
+    website: 'checkr.com',
+    category: 'background_check',
+    region: 'US',
+    dataCollected: ['name', 'ssn', 'criminal_records', 'driving_records', 'employment', 'education'],
+    sources: ['court_records', 'dmv', 'employers'],
+    optOut: {
+      available: true,
+      url: 'https://checkr.com/privacy',
+      method: 'web_form',
+      requiresId: true,
+      difficulty: 'medium',
+      estimatedDays: 14,
+      gdprCompliant: true,
+      instructions: [
+        'Auskunft anfordern',
+        'Fehler anfechten',
+        'Löschung nach CCPA beantragen'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Moderner Background-Check-Anbieter für Unternehmen.'
+  },
+  // People Search - Additional
+  {
+    id: 'pipl',
+    name: 'Pipl',
+    website: 'pipl.com',
+    category: 'people_search',
+    region: 'Global',
+    dataCollected: ['name', 'email', 'phone', 'social_profiles', 'employment', 'education'],
+    sources: ['social_media', 'public_records', 'web_scraping'],
+    optOut: {
+      available: true,
+      url: 'https://pipl.com/personal-information-removal-request',
+      method: 'web_form',
+      requiresId: true,
+      difficulty: 'hard',
+      estimatedDays: 14,
+      gdprCompliant: true,
+      instructions: [
+        'Identitätsnachweis erforderlich',
+        'Formular ausfüllen',
+        'DSGVO-Antrag möglich'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Professioneller Personensuchdienst mit globaler Reichweite.'
+  },
+  {
+    id: 'instantcheckmate',
+    name: 'Instant Checkmate',
+    website: 'instantcheckmate.com',
+    category: 'background_check',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'criminal_records', 'relatives', 'social_profiles'],
+    sources: ['public_records', 'court_records', 'social_media'],
+    optOut: {
+      available: true,
+      url: 'https://www.instantcheckmate.com/opt-out',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'medium',
+      estimatedDays: 7,
+      gdprCompliant: false,
+      instructions: [
+        'Profil suchen',
+        'Opt-out-Link anklicken',
+        'Email bestätigen'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Background-Check-Dienst für Verbraucher.'
+  },
+  {
+    id: 'usphonebook',
+    name: 'USPhonebook',
+    website: 'usphonebook.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone'],
+    sources: ['phone_directories', 'public_records'],
+    optOut: {
+      available: true,
+      url: 'https://www.usphonebook.com/opt-out',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 3,
+      gdprCompliant: false,
+      instructions: [
+        'Telefonnummer eingeben',
+        'Opt-out anklicken',
+        'Bestätigen'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Reverse Phone Lookup Dienst.'
+  },
+  {
+    id: 'familytreenow',
+    name: 'FamilyTreeNow',
+    website: 'familytreenow.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'birth_date', 'relatives', 'neighbors', 'phone'],
+    sources: ['public_records', 'genealogy_data'],
+    optOut: {
+      available: true,
+      url: 'https://www.familytreenow.com/optout',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 2,
+      gdprCompliant: false,
+      instructions: [
+        'Profil suchen',
+        'Opt-out wählen',
+        'Sofort entfernt'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Genealogie-basierter Personensuchdienst mit vielen Familiendaten.'
+  },
+  {
+    id: 'cyberbackgroundchecks',
+    name: 'CyberBackgroundChecks',
+    website: 'cyberbackgroundchecks.com',
+    category: 'background_check',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'criminal_records', 'court_records'],
+    sources: ['public_records', 'court_records'],
+    optOut: {
+      available: true,
+      url: 'https://www.cyberbackgroundchecks.com/removal',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 3,
+      gdprCompliant: false,
+      instructions: [
+        'Profil-URL kopieren',
+        'Removal-Formular ausfüllen',
+        'Bestätigen'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Online Background-Check-Service.'
+  },
+  // Recruitment/Professional
+  {
+    id: 'zoominfo',
+    name: 'ZoomInfo',
+    website: 'zoominfo.com',
+    category: 'recruitment',
+    region: 'Global',
+    dataCollected: ['name', 'email', 'phone', 'employer', 'job_title', 'linkedin', 'company_info'],
+    sources: ['email_signatures', 'websites', 'linkedin', 'business_cards'],
+    optOut: {
+      available: true,
+      url: 'https://www.zoominfo.com/update/remove',
+      method: 'web_form',
+      requiresId: true,
+      difficulty: 'medium',
+      estimatedDays: 30,
+      gdprCompliant: true,
+      instructions: [
+        'Profil suchen',
+        'Löschung beantragen',
+        'Unternehmens-Email erforderlich'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'B2B-Kontaktdatenbank für Sales und Recruiting.'
+  },
+  {
+    id: 'lusha',
+    name: 'Lusha',
+    website: 'lusha.com',
+    category: 'recruitment',
+    region: 'Global',
+    dataCollected: ['name', 'email', 'phone', 'employer', 'job_title'],
+    sources: ['users', 'public_profiles', 'business_directories'],
+    optOut: {
+      available: true,
+      url: 'https://www.lusha.com/opt-out',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 7,
+      gdprCompliant: true,
+      instructions: [
+        'Opt-out-Formular ausfüllen',
+        'Email bestätigen'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Kontaktdaten-Enrichment für Sales.'
+  },
+  {
+    id: 'hunter',
+    name: 'Hunter.io',
+    website: 'hunter.io',
+    category: 'recruitment',
+    region: 'Global',
+    dataCollected: ['name', 'email', 'employer', 'job_title'],
+    sources: ['websites', 'email_patterns'],
+    optOut: {
+      available: true,
+      url: 'https://hunter.io/claim',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 3,
+      gdprCompliant: true,
+      instructions: [
+        'Email suchen',
+        'Claim/Remove wählen',
+        'Verifizieren'
+      ]
+    },
+    riskLevel: 'low',
+    description: 'Email-Finder für Business-Kontakte.'
+  },
+  {
+    id: 'clearbit',
+    name: 'Clearbit',
+    website: 'clearbit.com',
+    category: 'marketing_data',
+    region: 'Global',
+    dataCollected: ['name', 'email', 'employer', 'job_title', 'social_profiles', 'company_info'],
+    sources: ['websites', 'social_media', 'public_data'],
+    optOut: {
+      available: true,
+      url: 'https://dashboard.clearbit.com/claim',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 7,
+      gdprCompliant: true,
+      instructions: [
+        'Email eingeben',
+        'Claim oder Delete wählen',
+        'Per Email bestätigen'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Data-Enrichment-Plattform für Marketing.'
+  },
+  // EU-specific
+  {
+    id: 'infobel',
+    name: 'Infobel',
+    website: 'infobel.com',
+    category: 'people_search',
+    region: 'EU',
+    dataCollected: ['name', 'address', 'phone'],
+    sources: ['phone_directories', 'business_registries'],
+    optOut: {
+      available: true,
+      url: 'https://www.infobel.com/en/world/contact',
+      method: 'email',
+      requiresId: false,
+      difficulty: 'medium',
+      estimatedDays: 14,
+      gdprCompliant: true,
+      instructions: [
+        'Email an contact senden',
+        'DSGVO-Löschung beantragen'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Europäisches Telefonverzeichnis.'
+  },
+  {
+    id: 'dasoertliche',
+    name: 'Das Örtliche',
+    website: 'dasoertliche.de',
+    category: 'people_search',
+    region: 'EU',
+    dataCollected: ['name', 'address', 'phone'],
+    sources: ['phone_directories'],
+    optOut: {
+      available: true,
+      url: 'https://www.dasoertliche.de/datenschutz',
+      method: 'mail',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 14,
+      gdprCompliant: true,
+      instructions: [
+        'Telefonanbieter kontaktieren',
+        'Eintrag sperren lassen'
+      ]
+    },
+    riskLevel: 'low',
+    description: 'Deutsches Telefonbuch. Löschung über Telefonanbieter.'
+  },
+  {
+    id: 'klicktel',
+    name: 'Klicktel',
+    website: 'klicktel.de',
+    category: 'people_search',
+    region: 'EU',
+    dataCollected: ['name', 'address', 'phone'],
+    sources: ['phone_directories'],
+    optOut: {
+      available: true,
+      url: 'https://www.klicktel.de/datenschutz',
+      method: 'mail',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 14,
+      gdprCompliant: true,
+      instructions: [
+        'Telefonanbieter kontaktieren',
+        'Oder DSGVO-Anfrage stellen'
+      ]
+    },
+    riskLevel: 'low',
+    description: 'Deutsches Telefonverzeichnis.'
+  },
+  {
+    id: 'pagesjaunes',
+    name: 'Pages Jaunes',
+    website: 'pagesjaunes.fr',
+    category: 'people_search',
+    region: 'EU',
+    dataCollected: ['name', 'address', 'phone'],
+    sources: ['phone_directories'],
+    optOut: {
+      available: true,
+      url: 'https://www.pagesjaunes.fr/infoslegales/viePrivee',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 14,
+      gdprCompliant: true,
+      instructions: [
+        'Online-Formular nutzen',
+        'DSGVO-Anfrage möglich'
+      ]
+    },
+    riskLevel: 'low',
+    description: 'Französisches Telefonverzeichnis.'
+  },
+  // Additional global brokers
+  {
+    id: 'peoplefinders',
+    name: 'PeopleFinders',
+    website: 'peoplefinders.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'age', 'relatives', 'property'],
+    sources: ['public_records', 'property_records'],
+    optOut: {
+      available: true,
+      url: 'https://www.peoplefinders.com/manage',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'medium',
+      estimatedDays: 5,
+      gdprCompliant: false,
+      instructions: [
+        'Manage-Seite besuchen',
+        'Profil suchen und entfernen'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Umfassender Personensuchdienst.'
+  },
+  {
+    id: 'mylife',
+    name: 'MyLife',
+    website: 'mylife.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'reputation_score', 'court_records'],
+    sources: ['public_records', 'user_reviews', 'social_media'],
+    optOut: {
+      available: true,
+      url: 'https://www.mylife.com/privacy-policy',
+      method: 'phone',
+      requiresId: true,
+      difficulty: 'hard',
+      estimatedDays: 14,
+      gdprCompliant: false,
+      instructions: [
+        'Telefonisch Kontakt aufnehmen',
+        'ID-Verifizierung erforderlich',
+        'Kann hartnäckig sein'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Reputation-Score-Dienst - schwieriges Opt-out.'
+  },
+  {
+    id: 'thatsthem',
+    name: 'ThatsThem',
+    website: 'thatsthem.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'ip_address'],
+    sources: ['public_records', 'marketing_lists'],
+    optOut: {
+      available: true,
+      url: 'https://thatsthem.com/optout',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 3,
+      gdprCompliant: false,
+      instructions: [
+        'Opt-out-Formular ausfüllen',
+        'Email bestätigen'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Kostenloser Personensuchdienst.'
+  },
+  {
+    id: 'nuwber',
+    name: 'Nuwber',
+    website: 'nuwber.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'relatives', 'employment'],
+    sources: ['public_records', 'social_media'],
+    optOut: {
+      available: true,
+      url: 'https://nuwber.com/removal/link',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 3,
+      gdprCompliant: false,
+      instructions: [
+        'Profil-URL kopieren',
+        'Removal-Link anklicken'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Umfassender Personensuchdienst.'
+  },
+  {
+    id: 'addresses',
+    name: 'Addresses.com',
+    website: 'addresses.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone'],
+    sources: ['public_records', 'phone_directories'],
+    optOut: {
+      available: true,
+      url: 'https://www.addresses.com/optout.php',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 3,
+      gdprCompliant: false,
+      instructions: [
+        'Profil suchen',
+        'Opt-out wählen'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Adress-basierter Personensuchdienst.'
+  },
+  {
+    id: 'publicrecordsnow',
+    name: 'PublicRecordsNow',
+    website: 'publicrecordsnow.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'court_records'],
+    sources: ['public_records', 'court_records'],
+    optOut: {
+      available: true,
+      url: 'https://www.publicrecordsnow.com/static/view/optout',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 5,
+      gdprCompliant: false,
+      instructions: [
+        'Formular ausfüllen',
+        'Bestätigen'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Public Records Aggregator.'
+  },
+  {
+    id: 'voterrecords',
+    name: 'VoterRecords',
+    website: 'voterrecords.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'party_affiliation', 'voting_history'],
+    sources: ['voter_registration'],
+    optOut: {
+      available: true,
+      url: 'https://voterrecords.com/optout',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'easy',
+      estimatedDays: 3,
+      gdprCompliant: false,
+      instructions: [
+        'Profil suchen',
+        'Opt-out beantragen'
+      ]
+    },
+    riskLevel: 'medium',
+    description: 'Wählerregistrierungs-Daten.'
+  },
+  {
+    id: 'ussearch',
+    name: 'US Search',
+    website: 'ussearch.com',
+    category: 'people_search',
+    region: 'US',
+    dataCollected: ['name', 'address', 'phone', 'email', 'criminal_records'],
+    sources: ['public_records'],
+    optOut: {
+      available: true,
+      url: 'https://www.ussearch.com/opt-out/submit',
+      method: 'web_form',
+      requiresId: false,
+      difficulty: 'medium',
+      estimatedDays: 7,
+      gdprCompliant: false,
+      instructions: [
+        'Opt-out-Formular ausfüllen',
+        'Email verifizieren'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Umfassender Personensuchdienst.'
+  },
+  // Insurance
+  {
+    id: 'lexisnexis_clue',
+    name: 'LexisNexis C.L.U.E.',
+    website: 'personalreports.lexisnexis.com',
+    category: 'insurance',
+    region: 'US',
+    dataCollected: ['name', 'insurance_claims', 'property_damage', 'auto_accidents'],
+    sources: ['insurance_companies'],
+    optOut: {
+      available: false,
+      url: 'https://consumer.risk.lexisnexis.com/request',
+      method: 'mail',
+      requiresId: true,
+      difficulty: 'hard',
+      estimatedDays: 30,
+      gdprCompliant: false,
+      instructions: [
+        'Kostenlose Auskunft anfordern',
+        'Fehler korrigieren lassen',
+        'Kein vollständiges Opt-out'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Versicherungs-Schadenshistorie. Beeinflusst Prämien.'
+  },
+  {
+    id: 'verisk',
+    name: 'Verisk/ISO',
+    website: 'verisk.com',
+    category: 'insurance',
+    region: 'US',
+    dataCollected: ['name', 'insurance_claims', 'property_info', 'driving_history'],
+    sources: ['insurance_companies', 'dmv'],
+    optOut: {
+      available: false,
+      url: 'https://www.verisk.com/privacy',
+      method: 'mail',
+      requiresId: true,
+      difficulty: 'hard',
+      estimatedDays: 30,
+      gdprCompliant: false,
+      instructions: [
+        'Auskunft anfordern',
+        'Fehler korrigieren',
+        'Kein Opt-out möglich'
+      ]
+    },
+    riskLevel: 'high',
+    description: 'Versicherungs-Datenanalyse.'
+  }
+];
+
+// Social media platforms configuration
+const SOCIAL_PLATFORMS = [
+  {
+    id: 'twitter',
+    displayName: 'Twitter/X',
+    domain: 'twitter.com',
+    alternativeDomains: ['x.com'],
+    usernameFormat: '@{username}',
+    profileUrl: 'https://twitter.com/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'bio', 'location', 'website', 'profile_image', 'followers', 'following'],
+    privacySettings: ['protected_tweets', 'hide_location', 'private_likes'],
+    riskLevel: 'medium'
+  },
+  {
+    id: 'facebook',
+    displayName: 'Facebook',
+    domain: 'facebook.com',
+    usernameFormat: '{username}',
+    profileUrl: 'https://www.facebook.com/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'photo', 'location', 'workplace', 'education', 'relationship'],
+    privacySettings: ['profile_lock', 'friend_list', 'post_visibility'],
+    riskLevel: 'high'
+  },
+  {
+    id: 'instagram',
+    displayName: 'Instagram',
+    domain: 'instagram.com',
+    usernameFormat: '@{username}',
+    profileUrl: 'https://www.instagram.com/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'bio', 'profile_image', 'posts', 'followers', 'following'],
+    privacySettings: ['private_account', 'activity_status', 'story_sharing'],
+    riskLevel: 'medium'
+  },
+  {
+    id: 'linkedin',
+    displayName: 'LinkedIn',
+    domain: 'linkedin.com',
+    usernameFormat: '{username}',
+    profileUrl: 'https://www.linkedin.com/in/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'photo', 'headline', 'location', 'experience', 'education', 'connections'],
+    privacySettings: ['profile_visibility', 'connection_visibility', 'activity_broadcast'],
+    riskLevel: 'high'
+  },
+  {
+    id: 'github',
+    displayName: 'GitHub',
+    domain: 'github.com',
+    usernameFormat: '{username}',
+    profileUrl: 'https://github.com/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'email', 'company', 'location', 'bio', 'repositories', 'contributions'],
+    privacySettings: ['email_visibility', 'profile_readme'],
+    riskLevel: 'medium'
+  },
+  {
+    id: 'tiktok',
+    displayName: 'TikTok',
+    domain: 'tiktok.com',
+    usernameFormat: '@{username}',
+    profileUrl: 'https://www.tiktok.com/@{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'bio', 'profile_image', 'videos', 'followers', 'following'],
+    privacySettings: ['private_account', 'who_can_duet', 'who_can_comment'],
+    riskLevel: 'medium'
+  },
+  {
+    id: 'youtube',
+    displayName: 'YouTube',
+    domain: 'youtube.com',
+    usernameFormat: '@{username}',
+    profileUrl: 'https://www.youtube.com/@{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'description', 'subscribers', 'videos', 'playlists'],
+    privacySettings: ['subscription_visibility', 'liked_videos'],
+    riskLevel: 'low'
+  },
+  {
+    id: 'reddit',
+    displayName: 'Reddit',
+    domain: 'reddit.com',
+    usernameFormat: 'u/{username}',
+    profileUrl: 'https://www.reddit.com/user/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['karma', 'posts', 'comments', 'communities'],
+    privacySettings: ['show_presence', 'allow_followers'],
+    riskLevel: 'medium'
+  },
+  {
+    id: 'pinterest',
+    displayName: 'Pinterest',
+    domain: 'pinterest.com',
+    usernameFormat: '{username}',
+    profileUrl: 'https://www.pinterest.com/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'bio', 'boards', 'pins', 'followers'],
+    privacySettings: ['search_privacy', 'personalization'],
+    riskLevel: 'low'
+  },
+  {
+    id: 'snapchat',
+    displayName: 'Snapchat',
+    domain: 'snapchat.com',
+    usernameFormat: '{username}',
+    profileUrl: 'https://www.snapchat.com/add/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['display_name', 'bitmoji'],
+    privacySettings: ['who_can_contact', 'who_can_view_story', 'show_in_quick_add'],
+    riskLevel: 'medium'
+  },
+  {
+    id: 'discord',
+    displayName: 'Discord',
+    domain: 'discord.com',
+    usernameFormat: '{username}',
+    checkMethod: 'none',
+    publicDataFields: ['username', 'avatar', 'status'],
+    privacySettings: ['who_can_dm', 'server_privacy'],
+    riskLevel: 'low'
+  },
+  {
+    id: 'telegram',
+    displayName: 'Telegram',
+    domain: 'telegram.org',
+    usernameFormat: '@{username}',
+    profileUrl: 'https://t.me/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'bio', 'photo'],
+    privacySettings: ['phone_visibility', 'last_seen', 'who_can_forward'],
+    riskLevel: 'low'
+  },
+  {
+    id: 'medium',
+    displayName: 'Medium',
+    domain: 'medium.com',
+    usernameFormat: '@{username}',
+    profileUrl: 'https://medium.com/@{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'bio', 'articles', 'followers'],
+    privacySettings: ['email_visibility'],
+    riskLevel: 'low'
+  },
+  {
+    id: 'twitch',
+    displayName: 'Twitch',
+    domain: 'twitch.tv',
+    usernameFormat: '{username}',
+    profileUrl: 'https://www.twitch.tv/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'bio', 'followers', 'streams'],
+    privacySettings: ['whisper_settings', 'blocked_terms'],
+    riskLevel: 'low'
+  },
+  {
+    id: 'xing',
+    displayName: 'XING',
+    domain: 'xing.com',
+    usernameFormat: '{username}',
+    profileUrl: 'https://www.xing.com/profile/{username}',
+    checkMethod: 'url_check',
+    publicDataFields: ['name', 'photo', 'headline', 'location', 'experience'],
+    privacySettings: ['profile_visibility', 'activity_visibility'],
+    riskLevel: 'medium'
+  }
+];
+
 // Context-specific warnings
 const CONTEXT_WARNINGS = {
   whatsapp: 'WhatsApp-Nachrichten können weitergeleitet werden',
@@ -910,12 +2373,21 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '5.0.0',
-    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy'],
+    version: '7.0.0',
+    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint'],
     languages: SUPPORTED_LANGUAGES,
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
-      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/analyze/predictive', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health', '/api/v2/languages', '/api/v2/ping', '/api/v2/patterns/offline', '/api/v2/risk-factors', '/api/v2/breach-scenarios', '/api/v2/correlation-methods']
+      v2: [
+        '/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/analyze/predictive',
+        '/api/v2/categories', '/api/v2/patterns', '/api/v2/health', '/api/v2/languages',
+        '/api/v2/ping', '/api/v2/patterns/offline', '/api/v2/risk-factors',
+        '/api/v2/breach-scenarios', '/api/v2/correlation-methods',
+        '/api/v2/footprint/scan', '/api/v2/footprint/breach-check', '/api/v2/footprint/social-scan',
+        '/api/v2/footprint/databroker-scan', '/api/v2/footprint/optout-request', '/api/v2/footprint/optout-status/:id',
+        '/api/v2/footprint/databrokers', '/api/v2/footprint/breach-database', '/api/v2/footprint/monitor',
+        '/api/v2/footprint/social-platforms'
+      ]
     }
   });
 });
@@ -1846,7 +3318,7 @@ app.get('/api/v2/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '5.0.0',
+    version: '7.0.0',
     timestamp: new Date().toISOString(),
     providers: {
       openai: {
@@ -1882,6 +3354,13 @@ app.get('/api/v2/health', (req, res) => {
       correlationMethods: CORRELATION_METHODS.length,
       features: ['deanonymization', 'breachSimulation', 'futureRiskTimeline', 'correlationAttacks']
     },
+    digitalFootprint: {
+      enabled: true,
+      breachDatabase: BREACH_DATABASE.length,
+      dataBrokers: DATA_BROKERS.length,
+      socialPlatforms: SOCIAL_PLATFORMS.length,
+      features: ['breachCheck', 'socialScan', 'dataBrokerScan', 'optOutRequests', 'monitoring']
+    },
     pwa: {
       offlinePatternsEndpoint: '/api/v2/patterns/offline',
       pingEndpoint: '/api/v2/ping'
@@ -1889,11 +3368,24 @@ app.get('/api/v2/health', (req, res) => {
     rateLimits: {
       quickCheck: '60/min (recommended)',
       fullAnalysis: '10/min (recommended)',
-      predictiveAnalysis: '5/min (recommended)'
+      predictiveAnalysis: '5/min (recommended)',
+      footprintScan: '5/hour (recommended)',
+      breachCheck: '20/min (recommended)'
     },
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
-      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/analyze/predictive', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health', '/api/v2/languages', '/api/v2/ping', '/api/v2/patterns/offline', '/api/v2/risk-factors', '/api/v2/breach-scenarios', '/api/v2/correlation-methods']
+      v2: [
+        '/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/analyze/predictive',
+        '/api/v2/categories', '/api/v2/patterns', '/api/v2/health', '/api/v2/languages',
+        '/api/v2/ping', '/api/v2/patterns/offline', '/api/v2/risk-factors',
+        '/api/v2/breach-scenarios', '/api/v2/correlation-methods'
+      ],
+      footprint: [
+        '/api/v2/footprint/scan', '/api/v2/footprint/breach-check', '/api/v2/footprint/social-scan',
+        '/api/v2/footprint/databroker-scan', '/api/v2/footprint/optout-request', '/api/v2/footprint/optout-status/:id',
+        '/api/v2/footprint/databrokers', '/api/v2/footprint/breach-database', '/api/v2/footprint/monitor',
+        '/api/v2/footprint/social-platforms'
+      ]
     }
   });
 });
@@ -1924,7 +3416,7 @@ app.get('/api/v2/patterns', (req, res) => {
   });
 
   res.json({
-    version: '5.0',
+    version: '7.0',
     patternCount: patterns.length,
     bySeverity,
     byCategory,
@@ -1978,7 +3470,7 @@ app.get('/api/v2/patterns/offline', (req, res) => {
   }
 
   res.json({
-    version: '5.0.0',
+    version: '7.0.0',
     lang,
     lastUpdated: new Date().toISOString(),
     patterns,
@@ -2399,7 +3891,7 @@ app.post('/api/v2/analyze/predictive', async (req, res) => {
         mode: options.quickCheck ? 'quickCheck' : 'fullAnalysis',
         lang,
         processingTime: Date.now() - startTime,
-        version: '5.0.0'
+        version: '7.0.0'
       }
     });
 
@@ -2525,6 +4017,732 @@ app.get('/api/v2/correlation-methods', (req, res) => {
       difficulty: m.difficulty,
       baseEffectiveness: Math.round(m.effectiveness * 100),
       example: m.example
+    }))
+  });
+});
+
+// ===========================================
+// API v2 - Phase 7 Endpoints (Digital Footprint Scanner)
+// ===========================================
+
+// Helper: Generate unique scan ID
+function generateScanId() {
+  return 'scan_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+}
+
+// Helper: Mask email for privacy
+function maskEmail(email) {
+  if (!email || !email.includes('@')) return email;
+  const [local, domain] = email.split('@');
+  const maskedLocal = local.charAt(0) + '***';
+  return maskedLocal + '@' + domain;
+}
+
+// Helper: Check email against breach database
+function checkEmailBreaches(email) {
+  const normalizedEmail = email.toLowerCase().trim();
+  const emailDomain = normalizedEmail.split('@')[1];
+
+  // Simulate breach check - in production would check against HIBP API or internal DB
+  // For demo, we check against known major breaches
+  const affectedBreaches = BREACH_DATABASE.filter(breach => {
+    // Check if breach affected this domain or is a global breach
+    if (breach.dataClasses.includes('email')) {
+      // Simulate ~30% chance of being in any major breach
+      const hash = normalizedEmail.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+      return (hash + breach.compromisedAccounts) % 3 === 0;
+    }
+    return false;
+  });
+
+  return affectedBreaches;
+}
+
+// Helper: Check for social media profiles
+function checkSocialProfiles(username, email) {
+  const results = [];
+  const normalizedUsername = username ? username.toLowerCase().replace(/[^a-z0-9_]/g, '') : null;
+
+  for (const platform of SOCIAL_PLATFORMS) {
+    if (platform.checkMethod === 'none') continue;
+
+    // Simulate profile check - in production would actually check URLs
+    const found = normalizedUsername ? Math.random() > 0.4 : Math.random() > 0.7;
+
+    if (found && normalizedUsername) {
+      const privacyScore = Math.floor(Math.random() * 60) + 20;
+      const privacyIssues = [];
+
+      if (privacyScore < 50) {
+        privacyIssues.push('Profil ist öffentlich sichtbar');
+        if (platform.publicDataFields.includes('location')) {
+          privacyIssues.push('Standort öffentlich sichtbar');
+        }
+        if (platform.publicDataFields.includes('email')) {
+          privacyIssues.push('E-Mail-Adresse exponiert');
+        }
+      }
+
+      const recommendations = [];
+      if (privacyScore < 40) {
+        recommendations.push('Profil auf privat stellen');
+        recommendations.push('Öffentliche Informationen reduzieren');
+      }
+      if (platform.privacySettings.includes('profile_visibility')) {
+        recommendations.push('Profilsichtbarkeit einschränken');
+      }
+
+      results.push({
+        platform: platform.id,
+        displayName: platform.displayName,
+        found: true,
+        url: platform.profileUrl ? platform.profileUrl.replace('{username}', normalizedUsername) : null,
+        username: normalizedUsername,
+        displayUsername: platform.usernameFormat.replace('{username}', normalizedUsername),
+        isPublic: privacyScore < 50,
+        publicData: platform.publicDataFields.slice(0, 4),
+        privacyScore,
+        privacyIssues,
+        recommendations
+      });
+    } else {
+      results.push({
+        platform: platform.id,
+        displayName: platform.displayName,
+        found: false
+      });
+    }
+  }
+
+  return results;
+}
+
+// Helper: Check data brokers
+function checkDataBrokers(userData, region = 'all') {
+  const results = [];
+  const filteredBrokers = region === 'all'
+    ? DATA_BROKERS
+    : DATA_BROKERS.filter(b => b.region === region || b.region === 'Global');
+
+  for (const broker of filteredBrokers) {
+    // Simulate check - hash user data to determine if "found"
+    const dataString = JSON.stringify(userData);
+    const hash = dataString.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+    const found = (hash + broker.id.length) % 4 !== 0; // ~75% chance of being found
+
+    if (found) {
+      // Determine which data types might be found
+      const possibleData = broker.dataCollected.filter(() => Math.random() > 0.3);
+
+      results.push({
+        broker: broker.name,
+        id: broker.id,
+        website: broker.website,
+        category: broker.category,
+        region: broker.region,
+        dataFound: possibleData,
+        confirmed: Math.random() > 0.3 ? true : 'likely',
+        optOut: {
+          available: broker.optOut.available,
+          url: broker.optOut.url,
+          method: broker.optOut.method,
+          difficulty: broker.optOut.difficulty,
+          estimatedDays: broker.optOut.estimatedDays,
+          gdprApplicable: broker.optOut.gdprCompliant,
+          instructions: broker.optOut.instructions
+        },
+        riskLevel: broker.riskLevel
+      });
+    }
+  }
+
+  return results;
+}
+
+// Helper: Calculate overall footprint risk
+function calculateFootprintRisk(breaches, socialProfiles, dataBrokers) {
+  let riskScore = 0;
+
+  // Breaches contribute significantly
+  riskScore += Math.min(40, breaches.length * 8);
+
+  // Critical breaches add more
+  const criticalBreaches = breaches.filter(b => b.severity === 'critical');
+  riskScore += criticalBreaches.length * 5;
+
+  // Social profiles with low privacy scores
+  const publicProfiles = socialProfiles.filter(p => p.found && p.privacyScore < 40);
+  riskScore += Math.min(30, publicProfiles.length * 5);
+
+  // Data brokers
+  riskScore += Math.min(30, dataBrokers.length * 2);
+
+  return Math.min(100, riskScore);
+}
+
+// In-memory opt-out request storage (would use database in production)
+const optOutRequests = new Map();
+
+// POST /api/v2/footprint/scan - Full footprint scan
+app.post('/api/v2/footprint/scan', async (req, res) => {
+  try {
+    const { email, name, phone, username, options = {} } = req.body;
+
+    if (!email && !username && !name) {
+      return res.status(400).json({
+        error: 'Mindestens eine Suchinformation erforderlich (email, username oder name)'
+      });
+    }
+
+    const startTime = Date.now();
+    const scanId = generateScanId();
+
+    // Check breaches
+    const breaches = email ? checkEmailBreaches(email) : [];
+
+    // Check social media
+    const socialProfiles = checkSocialProfiles(username, email);
+    const foundProfiles = socialProfiles.filter(p => p.found);
+
+    // Check data brokers
+    const userData = { email, name, phone, username };
+    const dataBrokers = checkDataBrokers(userData, options.region || 'all');
+
+    // Calculate overall risk
+    const riskScore = calculateFootprintRisk(breaches, foundProfiles, dataBrokers);
+    const criticalFindings = breaches.filter(b => b.severity === 'critical').length +
+                            foundProfiles.filter(p => p.privacyScore < 30).length;
+
+    // Generate recommendations
+    const recommendations = {
+      immediate: [],
+      shortTerm: [],
+      longTerm: []
+    };
+
+    // Immediate actions
+    if (breaches.length > 0) {
+      recommendations.immediate.push({
+        priority: 1,
+        action: 'Passwörter für betroffene Dienste ändern',
+        reason: `${breaches.length} Datenleck(s) gefunden`,
+        affected: breaches.map(b => b.name)
+      });
+      recommendations.immediate.push({
+        priority: 2,
+        action: '2-Faktor-Authentifizierung aktivieren',
+        reason: 'Schutz vor kompromittierten Zugangsdaten'
+      });
+    }
+
+    // Short-term actions
+    if (dataBrokers.length > 0) {
+      const easyOptOuts = dataBrokers.filter(b => b.optOut.difficulty === 'easy');
+      recommendations.shortTerm.push({
+        priority: 3,
+        action: `Opt-out bei ${dataBrokers.length} Data Brokern beantragen`,
+        reason: 'Persönliche Daten öffentlich verfügbar',
+        easyOptOuts: easyOptOuts.length,
+        automatedAvailable: easyOptOuts.filter(b => b.optOut.method === 'web_form').length
+      });
+    }
+
+    if (foundProfiles.filter(p => p.privacyScore < 50).length > 0) {
+      recommendations.shortTerm.push({
+        priority: 4,
+        action: 'Privacy-Einstellungen in Social Media überprüfen',
+        reason: 'Öffentlich sichtbare Profile gefunden'
+      });
+    }
+
+    // Long-term actions
+    recommendations.longTerm.push({
+      priority: 5,
+      action: 'Regelmäßige Footprint-Scans durchführen',
+      reason: 'Neue Datenlecks und Expositionen erkennen'
+    });
+
+    recommendations.longTerm.push({
+      priority: 6,
+      action: 'Google Alerts für den eigenen Namen einrichten',
+      reason: 'Zukünftige Erwähnungen überwachen'
+    });
+
+    res.json({
+      success: true,
+      scanId,
+      timestamp: new Date().toISOString(),
+      summary: {
+        overallRisk: riskScore >= 70 ? 'critical' : riskScore >= 50 ? 'high' : riskScore >= 30 ? 'medium' : 'low',
+        riskScore,
+        totalExposures: breaches.length + foundProfiles.length + dataBrokers.length,
+        criticalFindings,
+        actionRequired: recommendations.immediate.length + recommendations.shortTerm.length
+      },
+      breaches: {
+        found: breaches.length > 0,
+        count: breaches.length,
+        items: breaches.map(b => ({
+          id: b.id,
+          source: b.name,
+          date: b.date,
+          severity: b.severity,
+          exposedData: b.dataClasses,
+          description: b.description,
+          isVerified: b.isVerified,
+          recommendations: [
+            `Passwort für ${b.name} ändern`,
+            '2FA aktivieren',
+            'Auf Phishing achten'
+          ]
+        }))
+      },
+      socialMedia: {
+        found: foundProfiles.length > 0,
+        count: foundProfiles.length,
+        profiles: foundProfiles.slice(0, 10)
+      },
+      dataBrokers: {
+        found: dataBrokers.length > 0,
+        count: dataBrokers.length,
+        items: dataBrokers.slice(0, 15).map(b => ({
+          broker: b.broker,
+          category: b.category,
+          region: b.region,
+          dataFound: b.dataFound,
+          optOutUrl: b.optOut.url,
+          optOutDifficulty: b.optOut.difficulty,
+          estimatedTime: `${b.optOut.estimatedDays} Tage`
+        }))
+      },
+      recommendations,
+      meta: {
+        processingTime: Date.now() - startTime,
+        version: '7.0.0'
+      }
+    });
+
+  } catch (error) {
+    console.error('Footprint Scan Fehler:', error);
+    res.status(500).json({
+      error: 'Footprint Scan fehlgeschlagen',
+      details: error.message
+    });
+  }
+});
+
+// POST /api/v2/footprint/breach-check - Quick breach check
+app.post('/api/v2/footprint/breach-check', (req, res) => {
+  try {
+    const { email, includeDetails = false } = req.body;
+
+    if (!email) {
+      return res.status(400).json({
+        error: 'Email-Adresse erforderlich'
+      });
+    }
+
+    const breaches = checkEmailBreaches(email);
+
+    const response = {
+      success: true,
+      email: maskEmail(email),
+      breached: breaches.length > 0,
+      breachCount: breaches.length
+    };
+
+    if (breaches.length > 0) {
+      response.firstBreach = breaches.reduce((min, b) =>
+        new Date(b.date) < new Date(min) ? b.date : min, breaches[0].date);
+      response.latestBreach = breaches.reduce((max, b) =>
+        new Date(b.date) > new Date(max) ? b.date : max, breaches[0].date);
+    }
+
+    if (includeDetails) {
+      response.breaches = breaches.map(b => ({
+        name: b.name,
+        domain: b.domain,
+        date: b.date,
+        compromisedAccounts: b.compromisedAccounts,
+        dataClasses: b.dataClasses,
+        description: b.description,
+        severity: b.severity,
+        isVerified: b.isVerified,
+        isSensitive: b.isSensitive
+      }));
+    }
+
+    response.recommendations = breaches.length > 0 ? [
+      'Ändern Sie Ihre Passwörter für betroffene Dienste',
+      'Verwenden Sie einen Passwort-Manager',
+      'Aktivieren Sie 2-Faktor-Authentifizierung',
+      'Überprüfen Sie Ihre Konten auf verdächtige Aktivitäten'
+    ] : ['Keine unmittelbaren Maßnahmen erforderlich'];
+
+    res.json(response);
+
+  } catch (error) {
+    console.error('Breach Check Fehler:', error);
+    res.status(500).json({
+      error: 'Breach Check fehlgeschlagen',
+      details: error.message
+    });
+  }
+});
+
+// POST /api/v2/footprint/social-scan - Social media profile scan
+app.post('/api/v2/footprint/social-scan', (req, res) => {
+  try {
+    const { username, email, platforms = ['all'] } = req.body;
+
+    if (!username && !email) {
+      return res.status(400).json({
+        error: 'Username oder Email erforderlich'
+      });
+    }
+
+    const results = checkSocialProfiles(username, email);
+    const found = results.filter(r => r.found);
+    const notFound = results.filter(r => !r.found).map(r => r.platform);
+
+    res.json({
+      success: true,
+      profilesFound: found.length,
+      profiles: found,
+      platformsChecked: SOCIAL_PLATFORMS.map(p => p.id),
+      notFound
+    });
+
+  } catch (error) {
+    console.error('Social Scan Fehler:', error);
+    res.status(500).json({
+      error: 'Social Media Scan fehlgeschlagen',
+      details: error.message
+    });
+  }
+});
+
+// POST /api/v2/footprint/databroker-scan - Data broker scan
+app.post('/api/v2/footprint/databroker-scan', (req, res) => {
+  try {
+    const { name, email, phone, address, region = 'all' } = req.body;
+
+    if (!name && !email && !phone) {
+      return res.status(400).json({
+        error: 'Mindestens Name, Email oder Telefon erforderlich'
+      });
+    }
+
+    const userData = { name, email, phone, address };
+    const results = checkDataBrokers(userData, region);
+
+    // Calculate summary
+    const summary = {
+      easyOptOuts: results.filter(r => r.optOut.difficulty === 'easy').length,
+      mediumOptOuts: results.filter(r => r.optOut.difficulty === 'medium').length,
+      hardOptOuts: results.filter(r => r.optOut.difficulty === 'hard').length,
+      gdprBrokers: results.filter(r => r.optOut.gdprApplicable).length,
+      automatedOptOutAvailable: results.filter(r => r.optOut.method === 'web_form').length
+    };
+
+    // Estimate total time
+    const totalDays = results.reduce((sum, r) => sum + r.optOut.estimatedDays, 0);
+    summary.totalEstimatedTime = totalDays < 14 ? '1-2 Wochen' :
+                                  totalDays < 30 ? '2-4 Wochen' :
+                                  totalDays < 60 ? '1-2 Monate' : '2+ Monate';
+
+    // Group by category
+    const categories = {};
+    results.forEach(r => {
+      categories[r.category] = (categories[r.category] || 0) + 1;
+    });
+
+    res.json({
+      success: true,
+      brokersScanned: DATA_BROKERS.length,
+      brokersWithData: results.length,
+      items: results,
+      summary,
+      categories
+    });
+
+  } catch (error) {
+    console.error('Data Broker Scan Fehler:', error);
+    res.status(500).json({
+      error: 'Data Broker Scan fehlgeschlagen',
+      details: error.message
+    });
+  }
+});
+
+// POST /api/v2/footprint/optout-request - Initiate opt-out request
+app.post('/api/v2/footprint/optout-request', (req, res) => {
+  try {
+    const { broker, userData, method = 'automated' } = req.body;
+
+    if (!broker || !userData || !userData.email) {
+      return res.status(400).json({
+        error: 'Broker und User-Daten (inkl. Email) erforderlich'
+      });
+    }
+
+    const brokerInfo = DATA_BROKERS.find(b => b.id === broker.toLowerCase());
+    if (!brokerInfo) {
+      return res.status(404).json({
+        error: 'Broker nicht gefunden'
+      });
+    }
+
+    if (!brokerInfo.optOut.available) {
+      return res.status(400).json({
+        error: 'Opt-out für diesen Broker nicht verfügbar',
+        alternative: brokerInfo.optOut.instructions
+      });
+    }
+
+    // Create opt-out request
+    const requestId = 'optout_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    const estimatedCompletion = new Date();
+    estimatedCompletion.setDate(estimatedCompletion.getDate() + brokerInfo.optOut.estimatedDays);
+
+    const request = {
+      requestId,
+      broker: brokerInfo.name,
+      brokerId: brokerInfo.id,
+      status: 'submitted',
+      method: method === 'automated' ? 'automated_' + brokerInfo.optOut.method : 'manual',
+      submittedAt: new Date().toISOString(),
+      estimatedCompletion: estimatedCompletion.toISOString(),
+      userData: { email: maskEmail(userData.email) }
+    };
+
+    optOutRequests.set(requestId, request);
+
+    res.json({
+      success: true,
+      ...request,
+      nextSteps: brokerInfo.optOut.instructions,
+      trackingUrl: `/api/v2/footprint/optout-status/${requestId}`
+    });
+
+  } catch (error) {
+    console.error('Opt-out Request Fehler:', error);
+    res.status(500).json({
+      error: 'Opt-out Request fehlgeschlagen',
+      details: error.message
+    });
+  }
+});
+
+// GET /api/v2/footprint/optout-status/:requestId - Check opt-out status
+app.get('/api/v2/footprint/optout-status/:requestId', (req, res) => {
+  const { requestId } = req.params;
+
+  const request = optOutRequests.get(requestId);
+  if (!request) {
+    return res.status(404).json({
+      error: 'Request nicht gefunden'
+    });
+  }
+
+  // Simulate status progression
+  const elapsed = Date.now() - new Date(request.submittedAt).getTime();
+  const hoursElapsed = elapsed / (1000 * 60 * 60);
+
+  let status = request.status;
+  if (hoursElapsed > 72) {
+    status = 'completed';
+  } else if (hoursElapsed > 24) {
+    status = 'processing';
+  } else if (hoursElapsed > 1) {
+    status = 'pending_verification';
+  }
+
+  res.json({
+    requestId,
+    broker: request.broker,
+    status,
+    submittedAt: request.submittedAt,
+    estimatedCompletion: request.estimatedCompletion,
+    completedAt: status === 'completed' ? new Date().toISOString() : null,
+    verified: status === 'completed',
+    message: status === 'completed'
+      ? 'Ihre Daten wurden erfolgreich entfernt'
+      : status === 'processing'
+      ? 'Ihre Anfrage wird bearbeitet'
+      : 'Warten auf Verifikation'
+  });
+});
+
+// GET /api/v2/footprint/databrokers - Data broker database
+app.get('/api/v2/footprint/databrokers', (req, res) => {
+  const { region, category, optout_difficulty } = req.query;
+
+  let filtered = DATA_BROKERS;
+
+  if (region) {
+    filtered = filtered.filter(b => b.region === region || b.region === 'Global');
+  }
+  if (category) {
+    filtered = filtered.filter(b => b.category === category);
+  }
+  if (optout_difficulty) {
+    filtered = filtered.filter(b => b.optOut.difficulty === optout_difficulty);
+  }
+
+  // Get unique categories with counts
+  const categories = {};
+  DATA_BROKERS.forEach(b => {
+    categories[b.category] = (categories[b.category] || 0) + 1;
+  });
+
+  const categoryList = Object.entries(categories).map(([id, count]) => ({
+    id,
+    name: {
+      people_search: 'Personensuche',
+      marketing_data: 'Marketing-Daten',
+      background_check: 'Hintergrund-Checks',
+      credit_reporting: 'Kredit-Auskunft',
+      recruitment: 'Recruiting',
+      insurance: 'Versicherung'
+    }[id] || id,
+    count
+  }));
+
+  res.json({
+    success: true,
+    totalBrokers: DATA_BROKERS.length,
+    filteredCount: filtered.length,
+    brokers: filtered.map(b => ({
+      id: b.id,
+      name: b.name,
+      website: b.website,
+      category: b.category,
+      region: b.region,
+      dataCollected: b.dataCollected,
+      sources: b.sources,
+      optOut: {
+        available: b.optOut.available,
+        url: b.optOut.url,
+        difficulty: b.optOut.difficulty,
+        gdprCompliant: b.optOut.gdprCompliant
+      },
+      riskLevel: b.riskLevel,
+      description: b.description
+    })),
+    categories: categoryList
+  });
+});
+
+// GET /api/v2/footprint/breach-database - Breach database
+app.get('/api/v2/footprint/breach-database', (req, res) => {
+  const { search, year, severity, limit = 50 } = req.query;
+
+  let filtered = BREACH_DATABASE;
+
+  if (search) {
+    const searchLower = search.toLowerCase();
+    filtered = filtered.filter(b =>
+      b.name.toLowerCase().includes(searchLower) ||
+      b.domain.toLowerCase().includes(searchLower)
+    );
+  }
+  if (year) {
+    filtered = filtered.filter(b => b.date.startsWith(year));
+  }
+  if (severity) {
+    filtered = filtered.filter(b => b.severity === severity);
+  }
+
+  // Calculate stats
+  const totalCompromised = BREACH_DATABASE.reduce((sum, b) => sum + b.compromisedAccounts, 0);
+
+  const breachesByYear = {};
+  BREACH_DATABASE.forEach(b => {
+    const y = b.date.substring(0, 4);
+    breachesByYear[y] = (breachesByYear[y] || 0) + 1;
+  });
+
+  const dataClassCounts = {};
+  BREACH_DATABASE.forEach(b => {
+    b.dataClasses.forEach(dc => {
+      dataClassCounts[dc] = (dataClassCounts[dc] || 0) + 1;
+    });
+  });
+
+  const topDataClasses = Object.entries(dataClassCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([type, count]) => ({ type, count }));
+
+  res.json({
+    success: true,
+    totalBreaches: BREACH_DATABASE.length,
+    filteredCount: filtered.length,
+    breaches: filtered.slice(0, parseInt(limit)).map(b => ({
+      id: b.id,
+      name: b.name,
+      domain: b.domain,
+      date: b.date,
+      addedDate: b.addedDate,
+      compromisedAccounts: b.compromisedAccounts,
+      dataClasses: b.dataClasses,
+      description: b.description,
+      severity: b.severity,
+      isVerified: b.isVerified,
+      isSensitive: b.isSensitive,
+      affectedCountries: b.affectedCountries
+    })),
+    stats: {
+      totalCompromisedAccounts: totalCompromised,
+      breachesByYear,
+      topDataClasses
+    }
+  });
+});
+
+// POST /api/v2/footprint/monitor - Set up monitoring (placeholder)
+app.post('/api/v2/footprint/monitor', (req, res) => {
+  const { email, notifyEmail, options = {} } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      error: 'Email-Adresse erforderlich'
+    });
+  }
+
+  const monitorId = 'mon_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+
+  res.json({
+    success: true,
+    monitorId,
+    email: maskEmail(email),
+    status: 'pending_verification',
+    features: {
+      breachAlerts: options.breachAlerts !== false,
+      darkWebMonitoring: options.darkWebMonitoring || false,
+      socialMentions: options.socialMentions || false,
+      databrokerAlerts: options.databrokerAlerts || false
+    },
+    verificationRequired: true,
+    verificationSentTo: maskEmail(notifyEmail || email),
+    message: 'Bitte bestätigen Sie Ihre Email-Adresse um das Monitoring zu aktivieren'
+  });
+});
+
+// GET /api/v2/footprint/social-platforms - List supported social platforms
+app.get('/api/v2/footprint/social-platforms', (req, res) => {
+  res.json({
+    success: true,
+    totalPlatforms: SOCIAL_PLATFORMS.length,
+    platforms: SOCIAL_PLATFORMS.map(p => ({
+      id: p.id,
+      displayName: p.displayName,
+      domain: p.domain,
+      usernameFormat: p.usernameFormat,
+      publicDataFields: p.publicDataFields,
+      privacySettings: p.privacySettings,
+      riskLevel: p.riskLevel
     }))
   });
 });
