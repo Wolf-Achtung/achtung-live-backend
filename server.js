@@ -92,6 +92,214 @@ setInterval(() => {
   cacheStats.size = quickCheckCache.size;
 }, CACHE_TTL);
 
+// ===========================================
+// Multi-Language Support (Phase 4)
+// ===========================================
+
+const SUPPORTED_LANGUAGES = ['de', 'en', 'fr', 'es', 'it'];
+const DEFAULT_LANGUAGE = 'de';
+
+const LOCALES = {
+  de: {
+    riskLevels: {
+      safe: 'Sicher',
+      warning: 'Achtung',
+      danger: 'Gefahr'
+    },
+    summary: {
+      noRisks: 'Keine Risiken erkannt',
+      risks: '{count} potenzielle Risiken erkannt'
+    },
+    categories: {
+      iban: { message: 'IBAN erkannt - niemals in Chats teilen', suggestion: 'Bankdaten über sicheren Kanal senden' },
+      credit_card: { message: 'Kreditkartennummer erkannt - hohes Betrugsrisiko', suggestion: 'Niemals Kartendaten in Nachrichten teilen' },
+      bic: { message: 'BIC/SWIFT-Code erkannt', suggestion: 'Bankdaten nur über sichere Kanäle teilen' },
+      account_number: { message: 'Kontonummer erkannt', suggestion: 'Kontodaten über sicheren Kanal senden' },
+      national_id: { message: 'Ausweisnummer erkannt - Identitätsdiebstahl-Risiko', suggestion: 'Ausweisdaten niemals digital teilen' },
+      passport: { message: 'Reisepassnummer erkannt', suggestion: 'Passdaten nur bei behördlichen Anfragen teilen' },
+      tax_id: { message: 'Steuer-ID erkannt', suggestion: 'Steuer-ID nur mit Finanzamt/Arbeitgeber teilen' },
+      social_security: { message: 'Sozialversicherungsnummer erkannt', suggestion: 'SV-Nummer nur bei offiziellen Anfragen angeben' },
+      drivers_license: { message: 'Führerscheinnummer erkannt', suggestion: 'Führerscheindaten nicht digital teilen' },
+      health_insurance: { message: 'Krankenversicherungsnummer erkannt', suggestion: 'Versicherungsdaten nur mit medizinischem Personal teilen' },
+      medical_record: { message: 'Medizinische Aktennummer erkannt', suggestion: 'Patientendaten sind besonders schützenswert' },
+      ip_address: { message: 'IP-Adresse erkannt - ermöglicht Standortbestimmung', suggestion: 'IP-Adressen können zur Lokalisierung genutzt werden' },
+      mac_address: { message: 'MAC-Adresse erkannt', suggestion: 'MAC-Adressen identifizieren Geräte eindeutig' },
+      username: { message: 'Benutzername erkannt', suggestion: 'Benutzernamen können für Account-Angriffe genutzt werden' },
+      password: { message: 'Mögliches Passwort erkannt - niemals Passwörter teilen!', suggestion: 'Nutze einen Passwort-Manager statt Passwörter zu versenden' },
+      api_key: { message: 'API-Schlüssel erkannt - ermöglicht Systemzugriff', suggestion: 'API-Keys sofort rotieren wenn geleakt' },
+      phone: { message: 'Telefonnummer erkannt - kann für Spam/Betrug missbraucht werden', suggestion: 'Telefonnummer nur über sichere Kanäle teilen' },
+      email: { message: 'E-Mail-Adresse erkannt - Spam- und Phishing-Risiko', suggestion: 'E-Mail nur mit vertrauenswürdigen Kontakten teilen' },
+      date_of_birth: { message: 'Geburtsdatum erkannt - wichtiges Identitätsmerkmal', suggestion: 'Geburtsdatum kann für Identitätsdiebstahl genutzt werden' },
+      age: { message: 'Altersangabe erkannt', suggestion: 'Alter kann zur Identifizierung beitragen' },
+      gps_coordinates: { message: 'GPS-Koordinaten erkannt - exakter Standort', suggestion: 'GPS-Koordinaten verraten deinen genauen Standort' },
+      license_plate: { message: 'Kfz-Kennzeichen erkannt', suggestion: 'Kennzeichen können zur Identifizierung genutzt werden' },
+      address: { message: 'Straßenadresse erkannt', suggestion: 'Adressen können zur Lokalisierung genutzt werden' },
+      postal_code: { message: 'Postleitzahl mit Ort erkannt', suggestion: 'PLZ+Ort ermöglicht grobe Standortbestimmung' },
+      vacation_hint: { message: 'Abwesenheitshinweis erkannt - Einbrecher könnten dies nutzen', suggestion: 'Abwesenheiten erst nach Rückkehr posten' },
+      german_date: { message: 'Datum erkannt', suggestion: 'Daten können zur Identifizierung beitragen' }
+    },
+    contextWarnings: {
+      whatsapp: 'WhatsApp-Nachrichten können weitergeleitet werden',
+      email: 'E-Mails können unverschlüsselt übertragen werden',
+      social: 'Social Media Posts können öffentlich sichtbar sein',
+      work: 'Arbeitsnachrichten können vom Arbeitgeber eingesehen werden',
+      dating: 'Dating-Apps sind häufig Ziel von Betrügern',
+      forum: 'Forenbeiträge sind oft öffentlich und durchsuchbar',
+      default: 'Achte darauf, wer diese Nachricht lesen könnte'
+    }
+  },
+  en: {
+    riskLevels: {
+      safe: 'Safe',
+      warning: 'Warning',
+      danger: 'Danger'
+    },
+    summary: {
+      noRisks: 'No risks detected',
+      risks: '{count} potential risks detected'
+    },
+    categories: {
+      iban: { message: 'IBAN detected - Never share bank details in chats', suggestion: 'Send bank details via secure channel' },
+      credit_card: { message: 'Credit card number detected - High fraud risk', suggestion: 'Never share card details in messages' },
+      bic: { message: 'BIC/SWIFT code detected', suggestion: 'Share bank details only via secure channels' },
+      account_number: { message: 'Account number detected', suggestion: 'Send account details via secure channel' },
+      national_id: { message: 'ID number detected - Identity theft risk', suggestion: 'Never share ID details digitally' },
+      passport: { message: 'Passport number detected', suggestion: 'Share passport data only for official requests' },
+      tax_id: { message: 'Tax ID detected', suggestion: 'Share tax ID only with authorities/employer' },
+      social_security: { message: 'Social security number detected', suggestion: 'Provide SSN only for official requests' },
+      drivers_license: { message: 'Driver\'s license number detected', suggestion: 'Don\'t share license details digitally' },
+      health_insurance: { message: 'Health insurance number detected', suggestion: 'Share insurance data only with medical staff' },
+      medical_record: { message: 'Medical record number detected', suggestion: 'Patient data requires special protection' },
+      ip_address: { message: 'IP address detected - Enables location tracking', suggestion: 'IP addresses can be used for localization' },
+      mac_address: { message: 'MAC address detected', suggestion: 'MAC addresses uniquely identify devices' },
+      username: { message: 'Username detected', suggestion: 'Usernames can be used for account attacks' },
+      password: { message: 'Possible password detected - Never share passwords!', suggestion: 'Use a password manager instead of sending passwords' },
+      api_key: { message: 'API key detected - Enables system access', suggestion: 'Rotate API keys immediately if leaked' },
+      phone: { message: 'Phone number detected - Can be used for spam/fraud', suggestion: 'Share phone numbers only via secure channels' },
+      email: { message: 'Email address detected - Spam and phishing risk', suggestion: 'Share email only with trusted contacts' },
+      date_of_birth: { message: 'Date of birth detected - Important identity marker', suggestion: 'Birth date can be used for identity theft' },
+      age: { message: 'Age information detected', suggestion: 'Age can contribute to identification' },
+      gps_coordinates: { message: 'GPS coordinates detected - Exact location', suggestion: 'GPS coordinates reveal your exact location' },
+      license_plate: { message: 'License plate detected', suggestion: 'License plates can be used for identification' },
+      address: { message: 'Street address detected', suggestion: 'Addresses can be used for localization' },
+      postal_code: { message: 'Postal code with city detected', suggestion: 'ZIP+city enables rough location determination' },
+      vacation_hint: { message: 'Absence hint detected - Burglars could use this', suggestion: 'Post about absences only after returning' },
+      german_date: { message: 'Date detected', suggestion: 'Dates can contribute to identification' }
+    },
+    contextWarnings: {
+      whatsapp: 'WhatsApp messages can be forwarded',
+      email: 'Emails can be transmitted unencrypted',
+      social: 'Social media posts can be publicly visible',
+      work: 'Work messages can be viewed by employer',
+      dating: 'Dating apps are often targeted by scammers',
+      forum: 'Forum posts are often public and searchable',
+      default: 'Consider who might read this message'
+    }
+  },
+  fr: {
+    riskLevels: {
+      safe: 'Sûr',
+      warning: 'Attention',
+      danger: 'Danger'
+    },
+    summary: {
+      noRisks: 'Aucun risque détecté',
+      risks: '{count} risques potentiels détectés'
+    },
+    categories: {
+      iban: { message: 'IBAN détecté - Ne jamais partager dans les chats', suggestion: 'Envoyer les données bancaires via un canal sécurisé' },
+      credit_card: { message: 'Numéro de carte de crédit détecté - Risque de fraude élevé', suggestion: 'Ne jamais partager les données de carte dans les messages' },
+      bic: { message: 'Code BIC/SWIFT détecté', suggestion: 'Partager les données bancaires uniquement via des canaux sécurisés' },
+      phone: { message: 'Numéro de téléphone détecté - Peut être utilisé pour spam/fraude', suggestion: 'Partager le numéro uniquement via des canaux sécurisés' },
+      email: { message: 'Adresse e-mail détectée - Risque de spam et phishing', suggestion: 'Partager l\'e-mail uniquement avec des contacts de confiance' },
+      password: { message: 'Mot de passe possible détecté - Ne jamais partager!', suggestion: 'Utiliser un gestionnaire de mots de passe' },
+      vacation_hint: { message: 'Indice d\'absence détecté - Les cambrioleurs pourraient l\'utiliser', suggestion: 'Publier les absences seulement après le retour' }
+    },
+    contextWarnings: {
+      whatsapp: 'Les messages WhatsApp peuvent être transférés',
+      email: 'Les e-mails peuvent être transmis non chiffrés',
+      social: 'Les publications sur les réseaux sociaux peuvent être visibles publiquement',
+      default: 'Considérez qui pourrait lire ce message'
+    }
+  },
+  es: {
+    riskLevels: {
+      safe: 'Seguro',
+      warning: 'Atención',
+      danger: 'Peligro'
+    },
+    summary: {
+      noRisks: 'No se detectaron riesgos',
+      risks: '{count} riesgos potenciales detectados'
+    },
+    categories: {
+      iban: { message: 'IBAN detectado - Nunca compartir en chats', suggestion: 'Enviar datos bancarios por canal seguro' },
+      credit_card: { message: 'Número de tarjeta de crédito detectado - Alto riesgo de fraude', suggestion: 'Nunca compartir datos de tarjeta en mensajes' },
+      phone: { message: 'Número de teléfono detectado - Puede usarse para spam/fraude', suggestion: 'Compartir número solo por canales seguros' },
+      email: { message: 'Dirección de correo detectada - Riesgo de spam y phishing', suggestion: 'Compartir correo solo con contactos de confianza' },
+      password: { message: 'Posible contraseña detectada - ¡Nunca compartir!', suggestion: 'Usar un gestor de contraseñas' },
+      vacation_hint: { message: 'Indicio de ausencia detectado - Los ladrones podrían usarlo', suggestion: 'Publicar ausencias solo después de volver' }
+    },
+    contextWarnings: {
+      whatsapp: 'Los mensajes de WhatsApp pueden ser reenviados',
+      email: 'Los correos pueden transmitirse sin cifrar',
+      social: 'Las publicaciones en redes sociales pueden ser visibles públicamente',
+      default: 'Considera quién podría leer este mensaje'
+    }
+  },
+  it: {
+    riskLevels: {
+      safe: 'Sicuro',
+      warning: 'Attenzione',
+      danger: 'Pericolo'
+    },
+    summary: {
+      noRisks: 'Nessun rischio rilevato',
+      risks: '{count} rischi potenziali rilevati'
+    },
+    categories: {
+      iban: { message: 'IBAN rilevato - Mai condividere nelle chat', suggestion: 'Inviare dati bancari tramite canale sicuro' },
+      credit_card: { message: 'Numero carta di credito rilevato - Alto rischio frode', suggestion: 'Mai condividere dati carta nei messaggi' },
+      phone: { message: 'Numero di telefono rilevato - Può essere usato per spam/frode', suggestion: 'Condividere numero solo tramite canali sicuri' },
+      email: { message: 'Indirizzo email rilevato - Rischio spam e phishing', suggestion: 'Condividere email solo con contatti fidati' },
+      password: { message: 'Possibile password rilevata - Mai condividere!', suggestion: 'Usare un gestore di password' },
+      vacation_hint: { message: 'Indicazione di assenza rilevata - I ladri potrebbero usarla', suggestion: 'Pubblicare assenze solo dopo il ritorno' }
+    },
+    contextWarnings: {
+      whatsapp: 'I messaggi WhatsApp possono essere inoltrati',
+      email: 'Le email possono essere trasmesse non crittografate',
+      social: 'I post sui social media possono essere visibili pubblicamente',
+      default: 'Considera chi potrebbe leggere questo messaggio'
+    }
+  }
+};
+
+// Helper: Get localized message for a category
+function getLocalizedCategory(type, lang = 'de') {
+  const locale = LOCALES[lang] || LOCALES[DEFAULT_LANGUAGE];
+  const category = locale.categories[type];
+  if (category) {
+    return category;
+  }
+  // Fallback to German if not found in target language
+  return LOCALES.de.categories[type] || { message: type, suggestion: '' };
+}
+
+// Helper: Get localized context warning
+function getLocalizedContextWarning(context, lang = 'de') {
+  const locale = LOCALES[lang] || LOCALES[DEFAULT_LANGUAGE];
+  return locale.contextWarnings[context.toLowerCase()] || locale.contextWarnings.default;
+}
+
+// Helper: Get localized summary
+function getLocalizedSummary(count, lang = 'de') {
+  const locale = LOCALES[lang] || LOCALES[DEFAULT_LANGUAGE];
+  if (count === 0) {
+    return locale.summary.noRisks;
+  }
+  return locale.summary.risks.replace('{count}', count);
+}
+
 // Middleware
 app.use(cors({
   origin: ['https://achtung.live', 'http://localhost:3000', 'http://localhost:8888'],
@@ -456,11 +664,12 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '3.0.0',
-    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback'],
+    version: '4.0.0',
+    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns'],
+    languages: SUPPORTED_LANGUAGES,
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
-      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health']
+      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health', '/api/v2/languages', '/api/v2/ping', '/api/v2/patterns/offline']
     }
   });
 });
@@ -709,13 +918,20 @@ function generateSummary(categories) {
 // API v2: Analyze endpoint
 app.post('/api/v2/analyze', async (req, res) => {
   try {
-    const { text, context = 'default', options = {} } = req.body;
+    const { text, context = 'default', lang: requestLang, options = {} } = req.body;
     const includeRewrite = options.includeRewrite === true;
     const quickCheck = options.quickCheck === true;
 
+    // Validate and set language
+    const lang = SUPPORTED_LANGUAGES.includes(requestLang) ? requestLang : DEFAULT_LANGUAGE;
+
     if (!text || text.trim().length === 0) {
       return res.status(400).json({
-        error: 'Kein Text zum Analysieren angegeben'
+        error: lang === 'en' ? 'No text provided for analysis' :
+               lang === 'fr' ? 'Aucun texte fourni pour l\'analyse' :
+               lang === 'es' ? 'No se proporcionó texto para analizar' :
+               lang === 'it' ? 'Nessun testo fornito per l\'analisi' :
+               'Kein Text zum Analysieren angegeben'
       });
     }
 
@@ -723,7 +939,7 @@ app.post('/api/v2/analyze', async (req, res) => {
 
     // Quick Check Mode: Regex-only, no LLM, with caching
     if (quickCheck) {
-      const cacheKey = getCacheKey(text, context);
+      const cacheKey = getCacheKey(text, context + '|' + lang);
       const cached = getFromCache(cacheKey);
 
       if (cached) {
@@ -738,17 +954,29 @@ app.post('/api/v2/analyze', async (req, res) => {
 
       // Pattern-based detection only
       const patternFindings = detectPatterns(text);
-      const riskScore = calculateRiskScore(patternFindings);
+
+      // Localize findings
+      const localizedFindings = patternFindings.map(finding => {
+        const localized = getLocalizedCategory(finding.type, lang);
+        return {
+          ...finding,
+          message: localized.message || finding.message,
+          suggestion: localized.suggestion || finding.suggestion
+        };
+      });
+
+      const riskScore = calculateRiskScore(localizedFindings);
       const riskLevel = getRiskLevel(riskScore);
 
       const result = {
         riskScore,
         riskLevel,
-        summary: `${patternFindings.length} potenzielle Risiken erkannt`,
-        categories: patternFindings,
-        contextWarning: CONTEXT_WARNINGS[context.toLowerCase()] || CONTEXT_WARNINGS.default,
+        summary: getLocalizedSummary(localizedFindings.length, lang),
+        categories: localizedFindings,
+        contextWarning: getLocalizedContextWarning(context, lang),
         meta: {
           mode: 'quickCheck',
+          lang,
           processingTime: Date.now() - startTime,
           patternsChecked: Object.keys(PATTERNS).length,
           cached: false
@@ -816,18 +1044,28 @@ app.post('/api/v2/analyze', async (req, res) => {
       // Continue with pattern-based findings only
     }
 
-    // Step 3: Combine all findings
-    const allCategories = [...patternFindings, ...gptFindings];
+    // Step 3: Combine all findings and localize
+    const combinedFindings = [...patternFindings, ...gptFindings];
+
+    // Localize pattern findings
+    const allCategories = combinedFindings.map(finding => {
+      const localized = getLocalizedCategory(finding.type, lang);
+      return {
+        ...finding,
+        message: localized.message || finding.message,
+        suggestion: localized.suggestion || finding.suggestion
+      };
+    });
 
     // Step 4: Calculate risk score and level
     const riskScore = calculateRiskScore(allCategories);
     const riskLevel = getRiskLevel(riskScore);
 
-    // Step 5: Generate summary
-    const summary = generateSummary(allCategories);
+    // Step 5: Generate localized summary
+    const summary = getLocalizedSummary(allCategories.length, lang);
 
-    // Step 6: Get context warning
-    const contextWarning = CONTEXT_WARNINGS[context.toLowerCase()] || CONTEXT_WARNINGS.default;
+    // Step 6: Get localized context warning
+    const contextWarning = getLocalizedContextWarning(context, lang);
 
     // Step 7: Build response
     const response = {
@@ -838,6 +1076,7 @@ app.post('/api/v2/analyze', async (req, res) => {
       contextWarning,
       meta: {
         mode: 'fullAnalysis',
+        lang,
         processingTime: Date.now() - startTime,
         patternsChecked: Object.keys(PATTERNS).length,
         semanticAnalysis: gptFindings.length > 0
@@ -1048,7 +1287,7 @@ app.get('/api/v2/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '3.0.0',
+    version: '4.0.0',
     timestamp: new Date().toISOString(),
     providers: {
       openai: {
@@ -1072,13 +1311,22 @@ app.get('/api/v2/health', (req, res) => {
       cacheHitRate,
       cacheTTL: '5 minutes'
     },
+    multiLanguage: {
+      enabled: true,
+      languages: SUPPORTED_LANGUAGES,
+      default: DEFAULT_LANGUAGE
+    },
+    pwa: {
+      offlinePatternsEndpoint: '/api/v2/patterns/offline',
+      pingEndpoint: '/api/v2/ping'
+    },
     rateLimits: {
       quickCheck: '60/min (recommended)',
       fullAnalysis: '10/min (recommended)'
     },
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
-      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health']
+      v2: ['/api/v2/analyze', '/api/v2/rewrite', '/api/v2/analyze/batch', '/api/v2/categories', '/api/v2/patterns', '/api/v2/health', '/api/v2/languages', '/api/v2/ping', '/api/v2/patterns/offline']
     }
   });
 });
@@ -1109,11 +1357,66 @@ app.get('/api/v2/patterns', (req, res) => {
   });
 
   res.json({
-    version: '3.0',
+    version: '4.0',
     patternCount: patterns.length,
     bySeverity,
     byCategory,
     patterns
+  });
+});
+
+// ===========================================
+// API v2 - Phase 4 Endpoints (Multi-Language, PWA)
+// ===========================================
+
+// GET /api/v2/languages - List available languages
+app.get('/api/v2/languages', (req, res) => {
+  res.json({
+    available: SUPPORTED_LANGUAGES,
+    default: DEFAULT_LANGUAGE,
+    labels: {
+      de: 'Deutsch',
+      en: 'English',
+      fr: 'Français',
+      es: 'Español',
+      it: 'Italiano'
+    }
+  });
+});
+
+// GET /api/v2/ping - Minimal health check for PWA offline detection
+app.get('/api/v2/ping', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: Date.now()
+  });
+});
+
+// GET /api/v2/patterns/offline - Patterns and messages for PWA offline use
+app.get('/api/v2/patterns/offline', (req, res) => {
+  const lang = SUPPORTED_LANGUAGES.includes(req.query.lang) ? req.query.lang : DEFAULT_LANGUAGE;
+
+  // Build patterns with localized messages
+  const patterns = {};
+  for (const [type, config] of Object.entries(PATTERNS)) {
+    const localized = getLocalizedCategory(type, lang);
+    patterns[type] = {
+      regex: config.regex.source,
+      flags: config.regex.flags,
+      severity: config.severity,
+      category: config.category,
+      message: localized.message || config.message,
+      suggestion: localized.suggestion || config.suggestion
+    };
+  }
+
+  res.json({
+    version: '4.0.0',
+    lang,
+    lastUpdated: new Date().toISOString(),
+    patterns,
+    messages: LOCALES[lang] || LOCALES[DEFAULT_LANGUAGE],
+    contextWarnings: (LOCALES[lang] || LOCALES[DEFAULT_LANGUAGE]).contextWarnings
   });
 });
 
