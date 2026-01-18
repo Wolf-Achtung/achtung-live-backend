@@ -2317,6 +2317,1054 @@ function luhnCheck(num) {
   return sum % 10 === 0;
 }
 
+// ===========================================
+// Phase 10: Smart Privacy Coach
+// ===========================================
+
+// Privacy Coach Sessions (in-memory storage)
+const coachSessions = new Map();
+const SESSION_TTL = 60 * 60 * 1000; // 1 hour
+const coachFeedback = [];
+
+// Coach Knowledge Base - Privacy Terms
+const PRIVACY_TERMS = {
+  'k-anonymity': {
+    simple: 'k-Anonymität bedeutet: Du bist in einer Gruppe von mindestens k Personen versteckt, die alle gleich aussehen. Je größer k, desto besser versteckt bist du.',
+    detailed: 'k-Anonymität ist ein Datenschutz-Konzept, das sicherstellt, dass jede Person in einem Datensatz nicht von mindestens k-1 anderen Personen unterschieden werden kann. Dies wird erreicht, indem quasi-identifizierende Attribute (wie Alter, PLZ, Geschlecht) so verallgemeinert werden, dass mindestens k Personen identische Werte haben.',
+    technical: 'Formal: Ein Datensatz erfüllt k-Anonymität, wenn für jeden Datensatz im Release mindestens k-1 andere Datensätze existieren, die in allen quasi-identifizierenden Attributen übereinstimmen. Das Schutzmodell wurde 2002 von Latanya Sweeney eingeführt und adressiert Linking-Angriffe auf veröffentlichte Daten.'
+  },
+  'l-diversity': {
+    simple: 'l-Diversität erweitert k-Anonymität: Nicht nur musst du in einer Gruppe versteckt sein, sondern diese Gruppe muss auch verschiedene sensible Werte haben.',
+    detailed: 'l-Diversität ist eine Erweiterung von k-Anonymität, die fordert, dass jede Äquivalenzklasse mindestens l verschiedene Werte für sensible Attribute enthält. Dies schützt vor Homogenitäts-Angriffen, bei denen alle Personen in einer k-anonymen Gruppe denselben sensiblen Wert haben.',
+    technical: 'Ein Datensatz erfüllt l-Diversität, wenn für jede Äquivalenzklasse die Entropie der sensiblen Attribute mindestens log(l) beträgt, oder alternativ mindestens l verschiedene sensible Werte existieren.'
+  },
+  'differential-privacy': {
+    simple: 'Differentielle Privatsphäre fügt mathematisch kontrollierten Zufall hinzu, sodass niemand sicher sagen kann, ob du in den Daten bist oder nicht.',
+    detailed: 'Differentielle Privatsphäre ist ein mathematisches Framework, das garantiert, dass die Anwesenheit oder Abwesenheit einer einzelnen Person in einem Datensatz die Ergebnisse einer Analyse nur minimal beeinflusst. Dies wird durch Hinzufügen von kalibriertem Rauschen erreicht.',
+    technical: 'Ein randomisierter Algorithmus M erfüllt ε-differentielle Privatsphäre, wenn für alle Datensätze D1, D2, die sich in höchstens einem Element unterscheiden, und für alle Ergebnismengen S gilt: P[M(D1) ∈ S] ≤ exp(ε) × P[M(D2) ∈ S].'
+  },
+  'pii': {
+    simple: 'PII (Personally Identifiable Information) sind alle Daten, die dich direkt oder indirekt identifizieren können - von deinem Namen bis zu deiner IP-Adresse.',
+    detailed: 'Personenbezogene Daten (PII) umfassen alle Informationen, die sich auf eine identifizierte oder identifizierbare Person beziehen. Dazu gehören direkte Identifikatoren (Name, Sozialversicherungsnummer) und quasi-identifizierende Attribute, die in Kombination zur Identifikation führen können.',
+    technical: 'Nach DSGVO Art. 4: Personenbezogene Daten sind alle Informationen, die sich auf eine identifizierte oder identifizierbare natürliche Person beziehen. Eine Person ist identifizierbar, wenn sie direkt oder indirekt durch Zuordnung zu einer Kennung identifiziert werden kann.'
+  },
+  'gdpr': {
+    simple: 'Die DSGVO ist das EU-Datenschutzgesetz, das dir Kontrolle über deine Daten gibt - du kannst sie einsehen, korrigieren und löschen lassen.',
+    detailed: 'Die Datenschutz-Grundverordnung (DSGVO/GDPR) ist seit 2018 das zentrale EU-Datenschutzrecht. Sie gibt Bürgern Rechte wie Auskunft, Berichtigung, Löschung und Datenportabilität und verpflichtet Unternehmen zu Transparenz, Zweckbindung und Datensparsamkeit.',
+    technical: 'Die DSGVO (Verordnung (EU) 2016/679) definiert sechs Rechtsgrundlagen für die Datenverarbeitung (Art. 6), etabliert Betroffenenrechte (Art. 12-23), fordert Privacy by Design/Default (Art. 25) und ermöglicht Bußgelder bis 4% des weltweiten Jahresumsatzes.'
+  },
+  'phishing': {
+    simple: 'Phishing ist wie Angeln nach deinen Daten - Betrüger locken dich mit gefälschten E-Mails oder Websites, um Passwörter oder Bankdaten zu stehlen.',
+    detailed: 'Phishing ist eine Cyberangriffsmethode, bei der Angreifer sich als vertrauenswürdige Entität ausgeben, um Opfer zur Preisgabe sensibler Daten zu verleiten. Varianten sind Spear-Phishing (gezielte Angriffe), Whaling (auf Führungskräfte), und Smishing (per SMS).',
+    technical: 'Phishing-Angriffe nutzen Social Engineering und technische Täuschung (Domain-Spoofing, IDN-Homograph-Attacken, SSL-Strip). Moderne Phishing-Kits umfassen Echtzeit-Proxy-Techniken für MFA-Bypass und nutzen Adversary-in-the-Middle (AitM) Methoden.'
+  },
+  'deanonymization': {
+    simple: 'Deanonymisierung bedeutet: Aus angeblich anonymen Daten kann man herausfinden, wer du bist - oft reichen wenige Datenpunkte.',
+    detailed: 'Deanonymisierung ist der Prozess, bei dem anonymisierte Daten mit externen Informationen verknüpft werden, um Individuen zu identifizieren. Studien zeigen, dass 87% der US-Bevölkerung allein durch PLZ, Geburtsdatum und Geschlecht identifizierbar sind.',
+    technical: 'Re-Identifikationsangriffe nutzen Techniken wie Linkage-Attacks (Narayanan/Shmatikov 2008), Inferenz-Angriffe auf ML-Modelle, oder Timing-Side-Channels. Selbst aggregierte oder verrauschte Daten können durch Auxiliary-Information-Angriffe kompromittiert werden.'
+  },
+  'identity-theft': {
+    simple: 'Identitätsdiebstahl ist, wenn jemand deine persönlichen Daten nutzt, um sich als du auszugeben - zum Beispiel um Kredite aufzunehmen oder Verträge zu schließen.',
+    detailed: 'Identitätsdiebstahl umfasst das Sammeln und Missbrauchen persönlicher Daten für Betrug. Dies kann zu finanziellen Schäden, Kreditproblemen und rechtlichen Komplikationen führen. Häufige Quellen sind Datenlecks, Phishing und Social Engineering.',
+    technical: 'Identitätsbetrug wird kategorisiert in Account Takeover (Übernahme existierender Konten), Synthetic Identity Fraud (Kombination echter und erfundener Daten) und True Name Fraud (vollständige Identitätsübernahme). Präventionsmaßnahmen umfassen MFA, Kreditsperre und Dark Web Monitoring.'
+  },
+  '2fa': {
+    simple: 'Zwei-Faktor-Authentifizierung (2FA) bedeutet: Neben dem Passwort brauchst du noch etwas Zweites - wie einen Code auf dem Handy. Doppelte Sicherheit!',
+    detailed: '2FA fügt eine zweite Sicherheitsebene hinzu, die auf etwas basiert, das du weißt (Passwort), hast (Smartphone) oder bist (Fingerabdruck). Selbst wenn das Passwort gestohlen wird, schützt der zweite Faktor das Konto.',
+    technical: 'MFA-Methoden umfassen TOTP (RFC 6238), HOTP (RFC 4226), WebAuthn/FIDO2 (hardwarebasiert), SMS-OTP (unsicher wegen SIM-Swapping) und Push-Benachrichtigungen. Hardware-Token wie YubiKey bieten den stärksten Schutz gegen Phishing.'
+  }
+};
+
+// Coach Topics Database
+const COACH_TOPICS = {
+  categories: [
+    {
+      id: 'basics',
+      name: 'Grundlagen',
+      icon: '📚',
+      topics: [
+        {
+          id: 'what_is_privacy',
+          title: 'Was ist Datenschutz?',
+          description: 'Die Grundlagen verstehen',
+          difficulty: 'beginner',
+          duration: '5 min',
+          icon: '🔒'
+        },
+        {
+          id: 'gdpr_basics',
+          title: 'DSGVO einfach erklärt',
+          description: 'Deine Rechte in der EU',
+          difficulty: 'beginner',
+          duration: '10 min',
+          icon: '🇪🇺'
+        },
+        {
+          id: 'data_minimization',
+          title: 'Datensparsamkeit',
+          description: 'Warum weniger mehr ist',
+          difficulty: 'beginner',
+          duration: '5 min',
+          icon: '📉'
+        }
+      ]
+    },
+    {
+      id: 'data_types',
+      name: 'Datentypen',
+      icon: '📊',
+      topics: [
+        {
+          id: 'pii_explained',
+          title: 'Persönliche Daten (PII)',
+          description: 'Was sind personenbezogene Daten?',
+          difficulty: 'beginner',
+          duration: '7 min',
+          icon: '👤'
+        },
+        {
+          id: 'financial_data',
+          title: 'Finanzdaten schützen',
+          description: 'IBAN, Kreditkarte & Co',
+          difficulty: 'intermediate',
+          duration: '12 min',
+          icon: '💳'
+        },
+        {
+          id: 'health_data',
+          title: 'Gesundheitsdaten',
+          description: 'Besonders sensible Informationen',
+          difficulty: 'intermediate',
+          duration: '10 min',
+          icon: '🏥'
+        },
+        {
+          id: 'location_data',
+          title: 'Standortdaten',
+          description: 'GPS, Check-ins und mehr',
+          difficulty: 'beginner',
+          duration: '8 min',
+          icon: '📍'
+        }
+      ]
+    },
+    {
+      id: 'threats',
+      name: 'Bedrohungen',
+      icon: '⚠️',
+      topics: [
+        {
+          id: 'phishing',
+          title: 'Phishing erkennen',
+          description: 'Betrügerische Nachrichten entlarven',
+          difficulty: 'beginner',
+          duration: '8 min',
+          icon: '🎣'
+        },
+        {
+          id: 'identity_theft',
+          title: 'Identitätsdiebstahl',
+          description: 'Wie Kriminelle deine Identität stehlen',
+          difficulty: 'intermediate',
+          duration: '15 min',
+          icon: '🎭'
+        },
+        {
+          id: 'deanonymization',
+          title: 'Deanonymisierung',
+          description: 'Wie man aus anonymen Daten Personen erkennt',
+          difficulty: 'advanced',
+          duration: '20 min',
+          icon: '🔍'
+        },
+        {
+          id: 'social_engineering',
+          title: 'Social Engineering',
+          description: 'Psychologische Manipulation erkennen',
+          difficulty: 'intermediate',
+          duration: '12 min',
+          icon: '🧠'
+        },
+        {
+          id: 'data_breaches',
+          title: 'Datenlecks',
+          description: 'Wenn Unternehmen Daten verlieren',
+          difficulty: 'beginner',
+          duration: '10 min',
+          icon: '💧'
+        }
+      ]
+    },
+    {
+      id: 'protection',
+      name: 'Schutzmaßnahmen',
+      icon: '🛡️',
+      topics: [
+        {
+          id: 'password_security',
+          title: 'Sichere Passwörter',
+          description: 'Passwort-Manager und 2FA',
+          difficulty: 'beginner',
+          duration: '10 min',
+          icon: '🔑'
+        },
+        {
+          id: 'social_media_privacy',
+          title: 'Social Media Einstellungen',
+          description: 'Facebook, Instagram & Co absichern',
+          difficulty: 'intermediate',
+          duration: '15 min',
+          icon: '📱'
+        },
+        {
+          id: 'browser_privacy',
+          title: 'Browser-Privatsphäre',
+          description: 'Tracking verhindern',
+          difficulty: 'intermediate',
+          duration: '12 min',
+          icon: '🌐'
+        },
+        {
+          id: 'email_security',
+          title: 'E-Mail-Sicherheit',
+          description: 'Sichere Kommunikation',
+          difficulty: 'beginner',
+          duration: '8 min',
+          icon: '📧'
+        }
+      ]
+    },
+    {
+      id: 'advanced',
+      name: 'Fortgeschritten',
+      icon: '🎓',
+      topics: [
+        {
+          id: 'anonymization_techniques',
+          title: 'Anonymisierungstechniken',
+          description: 'k-Anonymität, l-Diversität & mehr',
+          difficulty: 'advanced',
+          duration: '25 min',
+          icon: '🔬'
+        },
+        {
+          id: 'encryption_basics',
+          title: 'Verschlüsselung verstehen',
+          description: 'Wie Kryptografie schützt',
+          difficulty: 'advanced',
+          duration: '20 min',
+          icon: '🔐'
+        },
+        {
+          id: 'privacy_laws',
+          title: 'Datenschutzgesetze weltweit',
+          description: 'DSGVO, CCPA, LGPD & mehr',
+          difficulty: 'advanced',
+          duration: '30 min',
+          icon: '⚖️'
+        }
+      ]
+    }
+  ]
+};
+
+// Topic Content Database
+const TOPIC_CONTENT = {
+  'phishing': {
+    introduction: 'Phishing ist eine der häufigsten Betrugsmaschen im Internet. Betrüger versuchen, dich mit gefälschten E-Mails oder Websites zur Preisgabe sensibler Daten zu verleiten.',
+    sections: [
+      {
+        title: 'Was ist Phishing?',
+        content: 'Phishing kommt vom englischen "fishing" (Angeln). Genau wie beim Angeln werfen Betrüger einen "Köder" aus - meist in Form einer E-Mail oder Nachricht - und hoffen, dass du "anbeißt" und deine Daten preisgibst.',
+        visualAid: {
+          type: 'diagram',
+          description: 'Betrüger → Gefälschte E-Mail → Opfer → Datendiebstahl'
+        }
+      },
+      {
+        title: 'Typische Merkmale',
+        content: 'So erkennst du Phishing-Versuche:',
+        bulletPoints: [
+          'Dringlichkeit: "Ihr Konto wird gesperrt!"',
+          'Rechtschreibfehler und seltsame Formulierungen',
+          'Verdächtige Absender-Adressen (z.B. support@bank-sicherheit.com statt @bank.de)',
+          'Links zu falschen Websites (Hover über Link zeigt andere URL)',
+          'Aufforderung zur Dateneingabe per E-Mail',
+          'Unpersönliche Anrede ("Sehr geehrter Kunde")'
+        ]
+      },
+      {
+        title: 'Arten von Phishing',
+        content: 'Es gibt verschiedene Phishing-Varianten:',
+        bulletPoints: [
+          'E-Mail-Phishing: Massenhaft versendete betrügerische E-Mails',
+          'Spear-Phishing: Gezielte Angriffe mit persönlichen Informationen',
+          'Whaling: Angriffe auf Führungskräfte',
+          'Smishing: Phishing per SMS',
+          'Vishing: Phishing per Telefon'
+        ]
+      },
+      {
+        title: 'Praxis-Check',
+        type: 'interactive',
+        quiz: [
+          {
+            question: 'Diese Mail behauptet von deiner Bank zu sein. Der Absender ist "service@sparkasse-sicherheit.com". Ist das verdächtig?',
+            options: ['Ja, verdächtig', 'Nein, sieht legitim aus'],
+            correct: 0,
+            explanation: 'Echte Bank-Mails kommen von @sparkasse.de, nicht von Phantasie-Domains!'
+          },
+          {
+            question: 'Du erhältst eine E-Mail: "Dringend! Ihr PayPal-Konto wird in 24 Stunden gesperrt. Klicken Sie hier zum Verifizieren." Was tust du?',
+            options: ['Schnell auf den Link klicken', 'Direkt auf paypal.com gehen und dort einloggen'],
+            correct: 1,
+            explanation: 'Niemals auf Links in verdächtigen E-Mails klicken. Gehe immer direkt zur offiziellen Website.'
+          }
+        ]
+      }
+    ],
+    keyTakeaways: [
+      'Nie auf Links in verdächtigen Mails klicken',
+      'Absender-Adresse genau prüfen',
+      'Bei Dringlichkeit besonders vorsichtig sein',
+      'Im Zweifel: Unternehmen direkt kontaktieren'
+    ],
+    relatedTopics: ['identity_theft', 'password_security', 'email_security']
+  },
+  'password_security': {
+    introduction: 'Sichere Passwörter sind deine erste Verteidigungslinie gegen Hacker. Doch was macht ein Passwort wirklich sicher?',
+    sections: [
+      {
+        title: 'Was macht ein sicheres Passwort aus?',
+        content: 'Ein sicheres Passwort sollte:',
+        bulletPoints: [
+          'Mindestens 12 Zeichen lang sein',
+          'Groß- und Kleinbuchstaben enthalten',
+          'Zahlen und Sonderzeichen nutzen',
+          'Keine persönlichen Informationen (Geburtstag, Name) enthalten',
+          'Nicht in Wörterbüchern vorkommen',
+          'Für jeden Dienst einzigartig sein'
+        ]
+      },
+      {
+        title: 'Passwort-Manager',
+        content: 'Ein Passwort-Manager speichert alle deine Passwörter sicher verschlüsselt. Du brauchst dir nur noch ein Master-Passwort zu merken.',
+        bulletPoints: [
+          'Empfohlen: Bitwarden (kostenlos, Open Source)',
+          'Alternativ: 1Password, LastPass, KeePass',
+          'Niemals Passwörter im Browser speichern',
+          'Aktiviere 2FA für den Passwort-Manager'
+        ]
+      },
+      {
+        title: 'Zwei-Faktor-Authentifizierung (2FA)',
+        content: '2FA fügt eine zweite Sicherheitsebene hinzu:',
+        bulletPoints: [
+          'Wissen: Dein Passwort',
+          'Besitz: Dein Smartphone (Authenticator-App)',
+          'Sein: Biometrie (Fingerabdruck, Gesicht)',
+          'Hardware-Keys wie YubiKey bieten den besten Schutz'
+        ]
+      }
+    ],
+    keyTakeaways: [
+      'Nutze einen Passwort-Manager',
+      'Aktiviere 2FA überall wo möglich',
+      'Jeder Account braucht ein einzigartiges Passwort',
+      'Länge ist wichtiger als Komplexität'
+    ],
+    relatedTopics: ['phishing', 'identity_theft', '2fa']
+  },
+  'gdpr_basics': {
+    introduction: 'Die DSGVO (Datenschutz-Grundverordnung) gibt dir als EU-Bürger starke Rechte über deine persönlichen Daten.',
+    sections: [
+      {
+        title: 'Deine Rechte unter der DSGVO',
+        content: 'Als EU-Bürger hast du folgende Rechte:',
+        bulletPoints: [
+          'Recht auf Auskunft: Erfahre, welche Daten ein Unternehmen über dich hat',
+          'Recht auf Berichtigung: Falsche Daten korrigieren lassen',
+          'Recht auf Löschung: "Recht auf Vergessenwerden"',
+          'Recht auf Datenportabilität: Deine Daten in einem nutzbaren Format erhalten',
+          'Recht auf Widerspruch: Der Datenverarbeitung widersprechen'
+        ]
+      },
+      {
+        title: 'Pflichten der Unternehmen',
+        content: 'Unternehmen müssen:',
+        bulletPoints: [
+          'Transparent über Datenverarbeitung informieren',
+          'Nur notwendige Daten erheben (Datensparsamkeit)',
+          'Daten sicher aufbewahren',
+          'Datenpannen innerhalb von 72 Stunden melden',
+          'Auf deine Anfragen innerhalb eines Monats antworten'
+        ]
+      },
+      {
+        title: 'So nutzt du deine Rechte',
+        content: 'Praktische Tipps zur Durchsetzung:',
+        bulletPoints: [
+          'Schreibe eine Auskunftsanfrage per E-Mail oder Brief',
+          'Nutze Vorlagen von Verbraucherzentralen',
+          'Setze eine Frist von 30 Tagen',
+          'Bei Verstößen: Beschwerde bei der Datenschutzbehörde einreichen'
+        ]
+      }
+    ],
+    keyTakeaways: [
+      'Du hast umfangreiche Rechte über deine Daten',
+      'Unternehmen müssen innerhalb eines Monats antworten',
+      'Bei Verstößen kannst du dich bei der Datenschutzbehörde beschweren',
+      'Löschungen müssen auch bei Drittanbietern durchgeführt werden'
+    ],
+    relatedTopics: ['what_is_privacy', 'data_minimization', 'privacy_laws']
+  },
+  'identity_theft': {
+    introduction: 'Identitätsdiebstahl ist, wenn jemand deine persönlichen Daten nutzt, um sich als du auszugeben - mit potenziell verheerenden Folgen.',
+    sections: [
+      {
+        title: 'Wie Identitätsdiebstahl funktioniert',
+        content: 'Kriminelle sammeln deine Daten aus verschiedenen Quellen:',
+        bulletPoints: [
+          'Datenlecks: Gehackte Websites verkaufen Daten im Darknet',
+          'Phishing: Gefälschte E-Mails und Websites',
+          'Social Engineering: Manipulation per Telefon',
+          'Dumpster Diving: Durchsuchen von Müll nach Dokumenten',
+          'Shoulder Surfing: Beobachten bei der Passworteingabe'
+        ]
+      },
+      {
+        title: 'Folgen von Identitätsdiebstahl',
+        content: 'Die Konsequenzen können schwerwiegend sein:',
+        bulletPoints: [
+          'Finanzieller Schaden: Kredite in deinem Namen',
+          'Rufschädigung: Fake-Accounts in sozialen Medien',
+          'Rechtliche Probleme: Straftaten unter deiner Identität',
+          'Emotionaler Stress: Angst und Hilflosigkeit',
+          'Langwierige Aufklärung: Monate bis Jahre'
+        ]
+      },
+      {
+        title: 'Schutzmaßnahmen',
+        content: 'So schützt du dich:',
+        bulletPoints: [
+          'Starke, einzigartige Passwörter mit 2FA',
+          'Regelmäßige Überprüfung deiner Kontoauszüge',
+          'Kreditauskunft regelmäßig prüfen (SCHUFA etc.)',
+          'Vorsicht bei der Preisgabe persönlicher Daten',
+          'Sichere Entsorgung von Dokumenten (Schredder)'
+        ]
+      }
+    ],
+    keyTakeaways: [
+      'Teile persönliche Daten nur wenn nötig',
+      'Überwache regelmäßig deine Finanzen',
+      'Reagiere sofort bei Verdacht',
+      'Erstatte Anzeige und informiere Betroffene'
+    ],
+    relatedTopics: ['phishing', 'password_security', 'data_breaches']
+  },
+  'pii_explained': {
+    introduction: 'Personenbezogene Daten (PII - Personally Identifiable Information) sind alle Informationen, die dich direkt oder indirekt identifizieren können.',
+    sections: [
+      {
+        title: 'Direkte Identifikatoren',
+        content: 'Diese Daten identifizieren dich eindeutig:',
+        bulletPoints: [
+          'Vollständiger Name',
+          'Sozialversicherungsnummer',
+          'Personalausweisnummer',
+          'Führerscheinnummer',
+          'Biometrische Daten (Fingerabdruck, Gesicht)',
+          'E-Mail-Adresse'
+        ]
+      },
+      {
+        title: 'Quasi-Identifikatoren',
+        content: 'Diese Daten allein sind harmlos, aber in Kombination gefährlich:',
+        bulletPoints: [
+          'Geburtsdatum (grenzt auf ~0,3% der Bevölkerung ein)',
+          'Postleitzahl (auf ~20.000 Personen)',
+          'Geschlecht (auf ~50%)',
+          'Beruf, Arbeitgeber, Schulbildung',
+          'ZIP + Geburtsdatum + Geschlecht = 87% der US-Bürger eindeutig identifizierbar!'
+        ]
+      },
+      {
+        title: 'Sensible Daten',
+        content: 'Besonders schützenswerte Kategorien:',
+        bulletPoints: [
+          'Gesundheitsdaten und medizinische Informationen',
+          'Religiöse und politische Überzeugungen',
+          'Sexuelle Orientierung',
+          'Ethnische Herkunft',
+          'Genetische Daten',
+          'Biometrische Daten'
+        ]
+      }
+    ],
+    keyTakeaways: [
+      'Auch "harmlose" Daten können in Kombination gefährlich sein',
+      'Sensible Daten haben besonderen Schutz',
+      'Teile nur Daten, die wirklich nötig sind',
+      'Quasi-Identifikatoren sind oft unterschätzt'
+    ],
+    relatedTopics: ['deanonymization', 'data_minimization', 'gdpr_basics']
+  },
+  'deanonymization': {
+    introduction: 'Deanonymisierung zeigt, dass "anonyme" Daten oft gar nicht so anonym sind, wie wir denken.',
+    sections: [
+      {
+        title: 'Was ist Deanonymisierung?',
+        content: 'Deanonymisierung ist der Prozess, bei dem scheinbar anonyme Daten mit anderen Informationen verknüpft werden, um Individuen zu identifizieren.',
+        bulletPoints: [
+          'Linkage-Attacken: Verbindung von Datensätzen',
+          'Inferenz-Angriffe: Rückschlüsse aus Mustern',
+          'Auxiliary Information: Nutzung externer Datenquellen',
+          'Selbst aggregierte Daten können anfällig sein'
+        ]
+      },
+      {
+        title: 'Berühmte Fälle',
+        content: 'Diese Beispiele zeigen die Gefahr:',
+        bulletPoints: [
+          'Netflix-Preis (2007): "Anonyme" Filmbewertungen mit IMDB verknüpft',
+          'AOL-Suchanfragen (2006): User durch Suchmuster identifiziert',
+          'NYC Taxi-Daten (2013): Promi-Fahrten durch Metadaten enthüllt',
+          'Fitnesstracker (2018): Militärbasen durch Aktivitätsdaten aufgedeckt'
+        ]
+      },
+      {
+        title: 'Schutzmaßnahmen',
+        content: 'Wie echte Anonymisierung funktioniert:',
+        bulletPoints: [
+          'k-Anonymität: Mindestens k Personen sind ununterscheidbar',
+          'l-Diversität: Verschiedene sensible Werte pro Gruppe',
+          'Differential Privacy: Mathematisch garantierter Schutz',
+          'Aggregation mit Mindestgruppen-größe'
+        ]
+      }
+    ],
+    keyTakeaways: [
+      'Anonymisierung ist schwieriger als gedacht',
+      'Wenige Datenpunkte reichen oft zur Identifikation',
+      'Veröffentlichte Daten können mit anderen Quellen verknüpft werden',
+      'Echte Anonymisierung erfordert mathematische Garantien'
+    ],
+    relatedTopics: ['pii_explained', 'anonymization_techniques', 'data_breaches']
+  }
+};
+
+// Risk Type Explanations for Coach
+const RISK_TYPE_EXPLANATIONS = {
+  email: {
+    name: 'E-Mail-Adresse',
+    icon: '📧',
+    risks: [
+      'Spam und Phishing-Angriffe',
+      'Verknüpfung verschiedener Online-Konten',
+      'Teil von Datenlecks',
+      'Social Engineering'
+    ],
+    advice: [
+      'Nutze verschiedene E-Mails für verschiedene Zwecke',
+      'Vermeide die Haupt-E-Mail für unwichtige Services',
+      'Prüfe regelmäßig auf Datenlecks (haveibeenpwned.com)'
+    ],
+    severity: 'medium'
+  },
+  phone: {
+    name: 'Telefonnummer',
+    icon: '📱',
+    risks: [
+      'SIM-Swapping-Angriffe',
+      'Unerwünschte Anrufe und SMS',
+      'Standortverfolgung',
+      'Account-Übernahme bei SMS-2FA'
+    ],
+    advice: [
+      'Gib die Nummer nur bei echtem Bedarf an',
+      'Nutze App-basierte 2FA statt SMS',
+      'Bei VoIP: Separate Nummer für Online-Dienste'
+    ],
+    severity: 'high'
+  },
+  iban: {
+    name: 'IBAN',
+    icon: '🏦',
+    risks: [
+      'Lastschriftbetrug',
+      'Identitätsdiebstahl',
+      'Phishing mit echten Kontodaten',
+      'Wirtschaftsspionage'
+    ],
+    advice: [
+      'IBAN nie öffentlich teilen',
+      'Kontoauszüge regelmäßig prüfen',
+      'Unbekannte Lastschriften sofort melden',
+      'Lastschriften können 8 Wochen zurückgebucht werden'
+    ],
+    severity: 'critical'
+  },
+  credit_card: {
+    name: 'Kreditkartennummer',
+    icon: '💳',
+    risks: [
+      'Direkter finanzieller Missbrauch',
+      'Online-Betrug',
+      'Card-not-present Fraud',
+      'Verkauf im Darknet'
+    ],
+    advice: [
+      'Nur auf vertrauenswürdigen Websites eingeben',
+      'Virtuelle Kreditkarten für Online-Shopping',
+      'Benachrichtigungen für jede Transaktion aktivieren',
+      'Bei Verdacht sofort sperren lassen'
+    ],
+    severity: 'critical'
+  },
+  address: {
+    name: 'Wohnadresse',
+    icon: '🏠',
+    risks: [
+      'Stalking und physische Bedrohungen',
+      'Einbruchsgefahr bei Urlaubsankündigungen',
+      'Identitätsdiebstahl',
+      'Unerwünschte Post und Werbung'
+    ],
+    advice: [
+      'Vollständige Adresse nur wenn nötig',
+      '"München" statt vollständiger Anschrift',
+      'Nie Adresse mit Urlaubsplänen kombinieren'
+    ],
+    severity: 'high'
+  },
+  birthdate: {
+    name: 'Geburtsdatum',
+    icon: '🎂',
+    risks: [
+      'Häufig als Sicherheitsfrage verwendet',
+      'Teil von Identitätsdiebstahl-Datensätzen',
+      'Ermöglicht Altersverifizierungs-Betrug',
+      'Kombiniert mit anderen Daten: hohe Identifizierbarkeit'
+    ],
+    advice: [
+      'Maximal Monat + Jahr teilen, nie den Tag',
+      'Keine echten Daten für "Sicherheitsfragen"',
+      'Vorsicht bei Geburtstags-Aktionen online'
+    ],
+    severity: 'medium'
+  },
+  full_name: {
+    name: 'Vollständiger Name',
+    icon: '👤',
+    risks: [
+      'Grundlage für Social Engineering',
+      'Verknüpfung von Online-Profilen',
+      'Ermöglicht gezielte Angriffe',
+      'Teil jeder Identitätsprüfung'
+    ],
+    advice: [
+      'Pseudonyme für nicht-offizielle Dienste',
+      'Initialen oder Vorname nur bei Social Media',
+      'Voller Name nur bei rechtlicher Notwendigkeit'
+    ],
+    severity: 'medium'
+  },
+  health: {
+    name: 'Gesundheitsdaten',
+    icon: '🏥',
+    risks: [
+      'Diskriminierung durch Arbeitgeber oder Versicherungen',
+      'Erpressung',
+      'Stigmatisierung',
+      'Besonders schützenswert nach DSGVO'
+    ],
+    advice: [
+      'Niemals öffentlich teilen',
+      'Vorsicht bei Gesundheits-Apps',
+      'Anonyme Foren für sensible Themen'
+    ],
+    severity: 'critical'
+  },
+  employer: {
+    name: 'Arbeitgeber',
+    icon: '🏢',
+    risks: [
+      'Spear-Phishing-Angriffe',
+      'Social Engineering im Unternehmenskontext',
+      'Wirtschaftsspionage',
+      'Karriereschädigung bei kritischen Posts'
+    ],
+    advice: [
+      'Allgemein bleiben: "Automobilbranche" statt "BMW"',
+      'Keine internen Informationen teilen',
+      'Kritik nur anonym äußern'
+    ],
+    severity: 'medium'
+  },
+  location: {
+    name: 'Aktueller Standort',
+    icon: '📍',
+    risks: [
+      'Stalking in Echtzeit',
+      'Einbruch während Abwesenheit',
+      'Bewegungsprofile erstellen',
+      'Vorhersage zukünftiger Aufenthaltsorte'
+    ],
+    advice: [
+      'Echtzeit-Standort nie öffentlich teilen',
+      'Fotos erst nach Verlassen des Ortes posten',
+      'GPS-Metadaten aus Fotos entfernen'
+    ],
+    severity: 'high'
+  }
+};
+
+// Quick Tips Database
+const QUICK_TIPS = [
+  {
+    id: 'tip_001',
+    icon: '💡',
+    title: 'Tipp des Tages',
+    content: 'Verwende für jeden Dienst ein einzigartiges Passwort. Ein Passwort-Manager hilft dabei!',
+    category: 'password_security'
+  },
+  {
+    id: 'tip_002',
+    icon: '🔒',
+    title: 'Wusstest du?',
+    content: 'In der EU hast du das Recht, deine Daten von jedem Unternehmen löschen zu lassen (DSGVO Art. 17).',
+    category: 'gdpr'
+  },
+  {
+    id: 'tip_003',
+    icon: '⚠️',
+    title: 'Achtung!',
+    content: 'Mit nur Geburtsdatum, PLZ und Geschlecht sind 87% der Menschen eindeutig identifizierbar.',
+    category: 'deanonymization'
+  },
+  {
+    id: 'tip_004',
+    icon: '📧',
+    title: 'E-Mail-Tipp',
+    content: 'Nutze Alias-Adressen (z.B. vorname+shop@email.de) um zu sehen, wer deine Daten weitergibt.',
+    category: 'email_security'
+  },
+  {
+    id: 'tip_005',
+    icon: '🔐',
+    title: '2FA aktivieren',
+    content: 'Zwei-Faktor-Authentifizierung macht dein Konto 99% sicherer. Nutze Authenticator-Apps statt SMS!',
+    category: '2fa'
+  },
+  {
+    id: 'tip_006',
+    icon: '🎣',
+    title: 'Phishing-Schutz',
+    content: 'Fahre immer mit der Maus über Links, bevor du klickst. Die echte URL wird unten im Browser angezeigt.',
+    category: 'phishing'
+  },
+  {
+    id: 'tip_007',
+    icon: '📱',
+    title: 'App-Berechtigungen',
+    content: 'Prüfe regelmäßig, welche Apps Zugriff auf Kamera, Mikrofon und Standort haben.',
+    category: 'mobile_security'
+  },
+  {
+    id: 'tip_008',
+    icon: '🌐',
+    title: 'Browser-Privatsphäre',
+    content: 'Nutze den privaten/inkognito Modus für sensible Suchen und lösche regelmäßig Cookies.',
+    category: 'browser_privacy'
+  },
+  {
+    id: 'tip_009',
+    icon: '💳',
+    title: 'Karten-Sicherheit',
+    content: 'Aktiviere Push-Benachrichtigungen für jede Kreditkarten-Transaktion. So erkennst du Betrug sofort.',
+    category: 'financial_data'
+  },
+  {
+    id: 'tip_010',
+    icon: '🗑️',
+    title: 'Daten löschen',
+    content: 'Lösche regelmäßig alte Accounts, die du nicht mehr nutzt. Weniger Daten = weniger Angriffsfläche.',
+    category: 'data_minimization'
+  }
+];
+
+// Daily Challenges
+const DAILY_CHALLENGES = [
+  {
+    id: 'challenge_001',
+    title: 'Passwort-Check',
+    description: 'Ändere heute ein schwaches Passwort in ein starkes',
+    reward: '+10 Privacy Score',
+    difficulty: 'easy'
+  },
+  {
+    id: 'challenge_002',
+    title: '2FA aktivieren',
+    description: 'Aktiviere Zwei-Faktor-Authentifizierung bei einem wichtigen Account',
+    reward: '+20 Privacy Score',
+    difficulty: 'easy'
+  },
+  {
+    id: 'challenge_003',
+    title: 'Social Media Check',
+    description: 'Prüfe die Datenschutz-Einstellungen deines Lieblings-Social-Media-Accounts',
+    reward: '+15 Privacy Score',
+    difficulty: 'easy'
+  },
+  {
+    id: 'challenge_004',
+    title: 'Breach Check',
+    description: 'Prüfe auf haveibeenpwned.com, ob deine E-Mail in einem Datenleck ist',
+    reward: '+10 Privacy Score',
+    difficulty: 'easy'
+  },
+  {
+    id: 'challenge_005',
+    title: 'App-Audit',
+    description: 'Lösche 3 Apps, die du nicht mehr nutzt',
+    reward: '+15 Privacy Score',
+    difficulty: 'medium'
+  }
+];
+
+// Coach Response Templates
+const COACH_TEMPLATES = {
+  greeting: {
+    de: 'Hallo! 👋 Ich bin dein Privacy Coach. Ich helfe dir, deine Daten besser zu schützen.\n\nDu kannst mich alles über Datenschutz fragen, oder ich erkläre dir die Risiken deiner Texte.\n\nWomit kann ich dir heute helfen?',
+    en: 'Hello! 👋 I\'m your Privacy Coach. I help you protect your data better.\n\nYou can ask me anything about privacy, or I\'ll explain the risks in your texts.\n\nHow can I help you today?'
+  },
+  unknown: {
+    de: 'Das ist eine interessante Frage! Leider bin ich mir nicht ganz sicher, wie ich dir hier am besten helfen kann. Kannst du deine Frage anders formulieren oder mir mehr Kontext geben?',
+    en: 'That\'s an interesting question! I\'m not quite sure how to best help you here. Could you rephrase your question or give me more context?'
+  },
+  riskHigh: {
+    de: 'Achtung! 🚨 Dein Text enthält kritische Daten, die dich eindeutig identifizierbar machen.',
+    en: 'Warning! 🚨 Your text contains critical data that makes you uniquely identifiable.'
+  }
+};
+
+// Helper: Generate unique session ID
+function generateSessionId() {
+  return 'session_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+}
+
+// Helper: Generate unique message ID
+function generateMessageId() {
+  return 'msg_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+}
+
+// Helper: Cleanup expired sessions
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  for (const [id, session] of coachSessions.entries()) {
+    if (now - new Date(session.createdAt).getTime() > SESSION_TTL) {
+      coachSessions.delete(id);
+    }
+  }
+}
+
+// Periodic session cleanup (every 15 minutes)
+setInterval(cleanupExpiredSessions, 15 * 60 * 1000);
+
+// Helper: Get or create session
+function getOrCreateSession(sessionId, userProfile = {}) {
+  if (sessionId && coachSessions.has(sessionId)) {
+    const session = coachSessions.get(sessionId);
+    session.lastActivity = new Date().toISOString();
+    return session;
+  }
+
+  const newSession = {
+    id: generateSessionId(),
+    createdAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + SESSION_TTL).toISOString(),
+    lastActivity: new Date().toISOString(),
+    userProfile: {
+      privacyLevel: userProfile.privacyLevel || 'beginner',
+      language: userProfile.language || 'de',
+      interests: userProfile.interests || []
+    },
+    conversationHistory: [],
+    context: {
+      lastAnalyzedText: null,
+      lastAnalysisResults: null,
+      topicsDiscussed: [],
+      suggestedActions: []
+    }
+  };
+
+  coachSessions.set(newSession.id, newSession);
+  return newSession;
+}
+
+// Helper: Detect data types in text
+function detectDataTypes(text) {
+  const detected = [];
+
+  // Email
+  if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text)) {
+    const match = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+    detected.push({ type: 'email', value: match[0], risk: 'medium' });
+  }
+
+  // IBAN
+  if (/[A-Z]{2}\d{2}[\s]?(?:\d{4}[\s]?){4,7}\d{0,2}/.test(text)) {
+    const match = text.match(/[A-Z]{2}\d{2}[\s]?(?:\d{4}[\s]?){4,7}\d{0,2}/);
+    detected.push({ type: 'iban', value: match[0], risk: 'critical' });
+  }
+
+  // Phone (German format)
+  if (/(?:\+49|0049|0)[\s]?(?:\d[\s]?){9,14}/.test(text)) {
+    const match = text.match(/(?:\+49|0049|0)[\s]?(?:\d[\s]?){9,14}/);
+    detected.push({ type: 'phone', value: match[0], risk: 'high' });
+  }
+
+  // Address (German format)
+  if (/\b[\wäöüßÄÖÜ]+(?:straße|str\.|weg|gasse|platz|allee)\s+\d+/i.test(text)) {
+    const match = text.match(/[\wäöüßÄÖÜ]+(?:straße|str\.|weg|gasse|platz|allee)\s+\d+[a-z]?(?:,?\s*\d{5}\s+[\wäöüßÄÖÜ]+)?/i);
+    detected.push({ type: 'address', value: match ? match[0] : 'Adresse', risk: 'high' });
+  }
+
+  // German postal code with city
+  if (/\b\d{5}\s+[A-ZÄÖÜa-zäöüß][a-zäöüß]+\b/.test(text)) {
+    const match = text.match(/\d{5}\s+[A-ZÄÖÜa-zäöüß][a-zäöüß]+/);
+    detected.push({ type: 'postal_code', value: match[0], risk: 'medium' });
+  }
+
+  // Birthdate
+  if (/\b(\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2})\b/.test(text)) {
+    const match = text.match(/\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2}/);
+    detected.push({ type: 'birthdate', value: match[0], risk: 'medium' });
+  }
+
+  // Age
+  if (/\b(\d{1,2})\s*(?:Jahre|J\.|years old|y\/o)\b/i.test(text)) {
+    const match = text.match(/(\d{1,2})\s*(?:Jahre|J\.|years old|y\/o)/i);
+    detected.push({ type: 'age', value: match[0], risk: 'low' });
+  }
+
+  // Credit card
+  if (/\b(?:\d{4}[\s-]?){3}\d{4}\b/.test(text)) {
+    const match = text.match(/(?:\d{4}[\s-]?){3}\d{4}/);
+    detected.push({ type: 'credit_card', value: match[0].substring(0, 4) + ' **** **** ****', risk: 'critical' });
+  }
+
+  return detected;
+}
+
+// Helper: Calculate uniqueness contribution
+function calculateUniquenessContribution(dataType) {
+  const contributions = {
+    full_name: 0.35,
+    address: 0.45,
+    birthdate: 0.15,
+    age: 0.05,
+    employer: 0.15,
+    phone: 0.40,
+    email: 0.30,
+    iban: 0.25,
+    credit_card: 0.20,
+    postal_code: 0.10
+  };
+  return contributions[dataType] || 0.05;
+}
+
+// Helper: Generate coach response based on context
+function generateCoachResponse(message, context, userProfile) {
+  const lang = userProfile.language || 'de';
+  const lowerMessage = message.toLowerCase();
+
+  // Check for greetings
+  if (/^(hallo|hi|hey|guten tag|servus|moin|hello)/i.test(lowerMessage)) {
+    return {
+      message: COACH_TEMPLATES.greeting[lang] || COACH_TEMPLATES.greeting.de,
+      messageType: 'greeting',
+      confidence: 1.0
+    };
+  }
+
+  // Check for questions about specific data types
+  for (const [type, info] of Object.entries(RISK_TYPE_EXPLANATIONS)) {
+    if (lowerMessage.includes(type) || lowerMessage.includes(info.name.toLowerCase())) {
+      const riskList = info.risks.map((r, i) => `${i + 1}. ${r}`).join('\n');
+      const adviceList = info.advice.map(a => `- ${a}`).join('\n');
+
+      return {
+        message: `**${info.icon} ${info.name}**\n\n**Risiken:**\n${riskList}\n\n**Was du tun solltest:**\n${adviceList}`,
+        messageType: 'explanation',
+        confidence: 0.9,
+        sources: [{ type: 'knowledge_base', topic: type }]
+      };
+    }
+  }
+
+  // Check for questions about privacy terms
+  for (const [term, definitions] of Object.entries(PRIVACY_TERMS)) {
+    const termVariants = [term, term.replace(/-/g, ' '), term.replace(/-/g, '')];
+    if (termVariants.some(v => lowerMessage.includes(v))) {
+      const complexity = userProfile.privacyLevel === 'advanced' ? 'technical' :
+                        userProfile.privacyLevel === 'intermediate' ? 'detailed' : 'simple';
+
+      return {
+        message: `**${term.replace(/-/g, ' ').toUpperCase()}**\n\n${definitions[complexity]}`,
+        messageType: 'explanation',
+        confidence: 0.95,
+        sources: [{ type: 'knowledge_base', topic: term }]
+      };
+    }
+  }
+
+  // Check for risk-related questions
+  if (lowerMessage.includes('warum') && (lowerMessage.includes('gefährlich') || lowerMessage.includes('risiko') || lowerMessage.includes('schlecht'))) {
+    // If we have previous analysis context
+    if (context && context.previousAnalysis) {
+      const risks = context.previousAnalysis.risks || [];
+      if (risks.length > 0) {
+        const riskType = risks[0];
+        const riskInfo = RISK_TYPE_EXPLANATIONS[riskType];
+        if (riskInfo) {
+          return {
+            message: `Diese Daten sind aus mehreren Gründen sensibel:\n\n**${riskInfo.icon} ${riskInfo.name}**\n\n` +
+                    `**Risiken:**\n${riskInfo.risks.map((r, i) => `${i + 1}. **${r}**`).join('\n')}\n\n` +
+                    `**Was du tun solltest:**\n${riskInfo.advice.map(a => `- ${a}`).join('\n')}`,
+            messageType: 'explanation',
+            confidence: 0.95,
+            sources: [{ type: 'knowledge_base', topic: riskType }]
+          };
+        }
+      }
+    }
+  }
+
+  // Check for topic requests
+  if (lowerMessage.includes('themen') || lowerMessage.includes('lernen') || lowerMessage.includes('topics')) {
+    return {
+      message: 'Ich kann dir viel über Datenschutz beibringen! Hier sind einige Themen:\n\n' +
+              '📚 **Grundlagen**: Was ist Datenschutz, DSGVO erklärt\n' +
+              '📊 **Datentypen**: Persönliche Daten, Finanzdaten, Gesundheitsdaten\n' +
+              '⚠️ **Bedrohungen**: Phishing, Identitätsdiebstahl, Deanonymisierung\n' +
+              '🛡️ **Schutzmaßnahmen**: Passwörter, 2FA, Social Media Einstellungen\n\n' +
+              'Worüber möchtest du mehr erfahren?',
+      messageType: 'menu',
+      confidence: 0.9
+    };
+  }
+
+  // Default response
+  return {
+    message: COACH_TEMPLATES.unknown[lang] || COACH_TEMPLATES.unknown.de,
+    messageType: 'clarification',
+    confidence: 0.5
+  };
+}
+
 // GPT prompt for semantic analysis (API v2)
 const ANALYZE_V2_SYSTEM_PROMPT = `Du bist ein Datenschutz-Experte. Analysiere den Text auf sensible Daten.
 Du sollst NUR semantische Kategorien erkennen, die nicht durch einfache Muster erkennbar sind.
@@ -2373,8 +3421,8 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '7.0.0',
-    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint'],
+    version: '10.0.0',
+    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint', 'privacyCoach'],
     languages: SUPPORTED_LANGUAGES,
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
@@ -2386,7 +3434,10 @@ app.get('/', (req, res) => {
         '/api/v2/footprint/scan', '/api/v2/footprint/breach-check', '/api/v2/footprint/social-scan',
         '/api/v2/footprint/databroker-scan', '/api/v2/footprint/optout-request', '/api/v2/footprint/optout-status/:id',
         '/api/v2/footprint/databrokers', '/api/v2/footprint/breach-database', '/api/v2/footprint/monitor',
-        '/api/v2/footprint/social-platforms'
+        '/api/v2/footprint/social-platforms',
+        '/api/v2/coach/chat', '/api/v2/coach/explain', '/api/v2/coach/analyze-risk',
+        '/api/v2/coach/topics', '/api/v2/coach/topic/:id', '/api/v2/coach/session',
+        '/api/v2/coach/feedback', '/api/v2/coach/quick-tips'
       ]
     }
   });
@@ -3318,7 +4369,7 @@ app.get('/api/v2/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '7.0.0',
+    version: '10.0.0',
     timestamp: new Date().toISOString(),
     providers: {
       openai: {
@@ -3361,6 +4412,18 @@ app.get('/api/v2/health', (req, res) => {
       socialPlatforms: SOCIAL_PLATFORMS.length,
       features: ['breachCheck', 'socialScan', 'dataBrokerScan', 'optOutRequests', 'monitoring']
     },
+    privacyCoach: {
+      enabled: true,
+      privacyTerms: Object.keys(PRIVACY_TERMS).length,
+      topicCategories: COACH_TOPICS.categories.length,
+      topics: COACH_TOPICS.categories.reduce((sum, c) => sum + c.topics.length, 0),
+      topicsWithContent: Object.keys(TOPIC_CONTENT).length,
+      riskExplanations: Object.keys(RISK_TYPE_EXPLANATIONS).length,
+      quickTips: QUICK_TIPS.length,
+      dailyChallenges: DAILY_CHALLENGES.length,
+      activeSessions: coachSessions.size,
+      features: ['chat', 'explain', 'analyzeRisk', 'topics', 'sessions', 'feedback', 'quickTips']
+    },
     pwa: {
       offlinePatternsEndpoint: '/api/v2/patterns/offline',
       pingEndpoint: '/api/v2/ping'
@@ -3370,7 +4433,10 @@ app.get('/api/v2/health', (req, res) => {
       fullAnalysis: '10/min (recommended)',
       predictiveAnalysis: '5/min (recommended)',
       footprintScan: '5/hour (recommended)',
-      breachCheck: '20/min (recommended)'
+      breachCheck: '20/min (recommended)',
+      coachChat: '30/min (recommended)',
+      coachExplain: '20/min (recommended)',
+      coachAnalyzeRisk: '10/min (recommended)'
     },
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
@@ -3385,6 +4451,11 @@ app.get('/api/v2/health', (req, res) => {
         '/api/v2/footprint/databroker-scan', '/api/v2/footprint/optout-request', '/api/v2/footprint/optout-status/:id',
         '/api/v2/footprint/databrokers', '/api/v2/footprint/breach-database', '/api/v2/footprint/monitor',
         '/api/v2/footprint/social-platforms'
+      ],
+      coach: [
+        '/api/v2/coach/chat', '/api/v2/coach/explain', '/api/v2/coach/analyze-risk',
+        '/api/v2/coach/topics', '/api/v2/coach/topic/:id', '/api/v2/coach/session',
+        '/api/v2/coach/feedback', '/api/v2/coach/quick-tips'
       ]
     }
   });
@@ -3416,7 +4487,7 @@ app.get('/api/v2/patterns', (req, res) => {
   });
 
   res.json({
-    version: '7.0',
+    version: '10.0',
     patternCount: patterns.length,
     bySeverity,
     byCategory,
@@ -3470,7 +4541,7 @@ app.get('/api/v2/patterns/offline', (req, res) => {
   }
 
   res.json({
-    version: '7.0.0',
+    version: '10.0.0',
     lang,
     lastUpdated: new Date().toISOString(),
     patterns,
@@ -4744,6 +5815,631 @@ app.get('/api/v2/footprint/social-platforms', (req, res) => {
       privacySettings: p.privacySettings,
       riskLevel: p.riskLevel
     }))
+  });
+});
+
+// ===========================================
+// API v2 - Phase 10 Endpoints (Smart Privacy Coach)
+// ===========================================
+
+// POST /api/v2/coach/chat - Main chat interaction
+app.post('/api/v2/coach/chat', (req, res) => {
+  const { sessionId, message, context = {} } = req.body;
+
+  if (!message) {
+    return res.status(400).json({
+      error: 'Nachricht erforderlich'
+    });
+  }
+
+  // Get or create session
+  const session = getOrCreateSession(sessionId, context.userProfile);
+
+  // Add user message to history
+  const userMessageId = generateMessageId();
+  session.conversationHistory.push({
+    id: userMessageId,
+    role: 'user',
+    content: message,
+    timestamp: new Date().toISOString()
+  });
+
+  // Update context if previous analysis provided
+  if (context.previousAnalysis) {
+    session.context.lastAnalyzedText = context.previousAnalysis.text;
+    session.context.lastAnalysisResults = context.previousAnalysis;
+  }
+
+  // Generate response
+  const coachResponse = generateCoachResponse(message, context, session.userProfile);
+  const responseMessageId = generateMessageId();
+
+  // Add coach response to history
+  session.conversationHistory.push({
+    id: responseMessageId,
+    role: 'coach',
+    content: coachResponse.message,
+    timestamp: new Date().toISOString(),
+    messageType: coachResponse.messageType,
+    metadata: {
+      confidence: coachResponse.confidence,
+      sources: coachResponse.sources || []
+    }
+  });
+
+  // Generate suggestions based on context
+  const suggestions = [];
+
+  if (coachResponse.messageType === 'explanation') {
+    suggestions.push({
+      type: 'follow_up',
+      text: 'Erzähl mir mehr darüber',
+      action: 'ask'
+    });
+    suggestions.push({
+      type: 'learn_more',
+      text: 'Zeige verwandte Themen',
+      action: 'topics'
+    });
+  }
+
+  if (context.previousAnalysis && context.previousAnalysis.riskScore > 50) {
+    suggestions.push({
+      type: 'action',
+      text: 'Text sicherer umschreiben',
+      action: 'rewrite',
+      params: { removeTypes: context.previousAnalysis.risks || [] }
+    });
+  }
+
+  suggestions.push({
+    type: 'follow_up',
+    text: 'Was sollte ich noch wissen?',
+    action: 'ask'
+  });
+
+  // Get a random privacy tip
+  const randomTip = QUICK_TIPS[Math.floor(Math.random() * QUICK_TIPS.length)];
+
+  res.json({
+    success: true,
+    sessionId: session.id,
+    response: {
+      message: coachResponse.message,
+      messageType: coachResponse.messageType,
+      confidence: coachResponse.confidence,
+      sources: coachResponse.sources || []
+    },
+    suggestions: suggestions.slice(0, 3),
+    relatedTopics: coachResponse.relatedTopics || [],
+    privacyTip: {
+      icon: randomTip.icon,
+      text: randomTip.content
+    }
+  });
+});
+
+// POST /api/v2/coach/explain - Explain a privacy term
+app.post('/api/v2/coach/explain', (req, res) => {
+  const { term, complexity = 'simple', language = 'de', context } = req.body;
+
+  if (!term) {
+    return res.status(400).json({
+      error: 'Begriff erforderlich'
+    });
+  }
+
+  const normalizedTerm = term.toLowerCase().replace(/\s+/g, '-');
+
+  // Check privacy terms
+  const termData = PRIVACY_TERMS[normalizedTerm];
+
+  if (!termData) {
+    // Check risk type explanations
+    const riskType = Object.entries(RISK_TYPE_EXPLANATIONS).find(([key, val]) =>
+      key === normalizedTerm || val.name.toLowerCase() === term.toLowerCase()
+    );
+
+    if (riskType) {
+      const [key, info] = riskType;
+      return res.json({
+        success: true,
+        term: term,
+        explanation: {
+          simple: `${info.name}: ${info.risks[0]}`,
+          detailed: `${info.name} ist ein sensibler Datentyp. Risiken: ${info.risks.join(', ')}. ${info.advice[0]}`,
+          technical: `${info.name} (Severity: ${info.severity}). Angriffsvektoren: ${info.risks.join('; ')}. Mitigationsstrategien: ${info.advice.join('; ')}`
+        },
+        examples: info.risks.map((risk, i) => ({
+          scenario: `Risiko ${i + 1}`,
+          description: risk
+        })),
+        visualAid: {
+          type: 'risk_level',
+          data: {
+            level: info.severity,
+            icon: info.severity === 'critical' ? '🔴' : info.severity === 'high' ? '🟠' : '🟡'
+          }
+        },
+        relatedTerms: Object.keys(RISK_TYPE_EXPLANATIONS).filter(k => k !== key).slice(0, 3),
+        learnMore: {
+          url: `/learn/${key}`
+        }
+      });
+    }
+
+    return res.status(404).json({
+      error: 'Begriff nicht gefunden',
+      suggestion: 'Versuche: ' + Object.keys(PRIVACY_TERMS).slice(0, 5).join(', ')
+    });
+  }
+
+  // Build examples based on term
+  let examples = [];
+  if (normalizedTerm === 'k-anonymity') {
+    examples = [
+      { scenario: 'k=1 (schlecht)', description: 'Du bist der einzige 25-jährige Programmierer in Berlin-Mitte → sofort identifizierbar' },
+      { scenario: 'k=1000 (gut)', description: 'Du bist einer von 1000 Personen mit gleichen Merkmalen → gut versteckt' }
+    ];
+  } else if (normalizedTerm === 'phishing') {
+    examples = [
+      { scenario: 'E-Mail-Phishing', description: 'Eine gefälschte E-Mail von "PayPal" fordert zur Passwort-Eingabe auf' },
+      { scenario: 'Spear-Phishing', description: 'Eine E-Mail nennt deinen echten Namen und Arbeitgeber, um glaubwürdig zu wirken' }
+    ];
+  }
+
+  res.json({
+    success: true,
+    term: term,
+    explanation: {
+      simple: termData.simple,
+      detailed: termData.detailed,
+      technical: termData.technical
+    },
+    examples,
+    visualAid: normalizedTerm === 'k-anonymity' ? {
+      type: 'comparison',
+      data: [
+        { k: 1, risk: 'critical', icon: '🔴' },
+        { k: 10, risk: 'high', icon: '🟠' },
+        { k: 100, risk: 'medium', icon: '🟡' },
+        { k: 1000, risk: 'low', icon: '🟢' }
+      ]
+    } : null,
+    relatedTerms: Object.keys(PRIVACY_TERMS).filter(t => t !== normalizedTerm).slice(0, 4),
+    learnMore: {
+      url: `/learn/${normalizedTerm}`
+    }
+  });
+});
+
+// POST /api/v2/coach/analyze-risk - Risk analysis with conversational explanation
+app.post('/api/v2/coach/analyze-risk', (req, res) => {
+  const { text, questionType = 'why_risky', detailLevel = 'comprehensive' } = req.body;
+
+  if (!text) {
+    return res.status(400).json({
+      error: 'Text erforderlich'
+    });
+  }
+
+  // Detect data types
+  const detectedData = detectDataTypes(text);
+
+  // Calculate risk score and identifiability
+  let totalUniqueness = 0;
+  const dataPoints = [];
+
+  // Detect full name (simple heuristic)
+  const nameMatch = text.match(/(?:ich bin|mein name ist|heisse|heiße)\s+([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)/i);
+  if (nameMatch) {
+    const contribution = calculateUniquenessContribution('full_name');
+    totalUniqueness += contribution;
+    dataPoints.push({
+      type: 'full_name',
+      value: nameMatch[1],
+      risk: 'high',
+      explanation: 'Dein vollständiger Name ist ein starker Identifikator',
+      uniquenessContribution: contribution
+    });
+  }
+
+  // Detect employer
+  const employerMatch = text.match(/(?:arbeite bei|arbeite für|bin bei|bei der|bei)\s+([A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ]+(?:\s+[A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ]+)?)/i);
+  if (employerMatch && !employerMatch[1].match(/^(der|die|das|einem|einer)$/i)) {
+    const contribution = calculateUniquenessContribution('employer');
+    totalUniqueness += contribution;
+    dataPoints.push({
+      type: 'employer',
+      value: employerMatch[1],
+      risk: 'medium',
+      explanation: 'Eingrenzt dich auf Mitarbeiter eines bestimmten Unternehmens',
+      uniquenessContribution: contribution
+    });
+  }
+
+  // Add detected data types
+  for (const data of detectedData) {
+    const contribution = calculateUniquenessContribution(data.type);
+    totalUniqueness += contribution;
+
+    const riskInfo = RISK_TYPE_EXPLANATIONS[data.type] || { name: data.type, severity: data.risk };
+
+    dataPoints.push({
+      type: data.type,
+      value: data.value,
+      risk: data.risk,
+      explanation: riskInfo.risks ? riskInfo.risks[0] : `${riskInfo.name} ist ein sensibler Datentyp`,
+      uniquenessContribution: contribution
+    });
+  }
+
+  // Calculate overall risk score
+  const riskScore = Math.min(Math.round(totalUniqueness * 100), 100);
+  const kAnonymity = riskScore > 90 ? 1 : riskScore > 70 ? 5 : riskScore > 50 ? 50 : riskScore > 30 ? 500 : 10000;
+  const identifiability = kAnonymity === 1 ? 'unique' : kAnonymity < 10 ? 'highly_identifiable' : kAnonymity < 100 ? 'somewhat_identifiable' : 'anonymous';
+
+  // Generate overall assessment
+  let overallAssessment = '';
+  if (riskScore > 80) {
+    overallAssessment = 'Dieser Text enthält eine gefährliche Kombination von Daten, die dich eindeutig identifizierbar macht.';
+  } else if (riskScore > 50) {
+    overallAssessment = 'Dieser Text enthält mehrere sensible Daten, die in Kombination problematisch sein können.';
+  } else if (riskScore > 20) {
+    overallAssessment = 'Der Text enthält einige persönliche Informationen, die du möglicherweise schützen möchtest.';
+  } else {
+    overallAssessment = 'Der Text enthält wenig bis keine identifizierenden Informationen.';
+  }
+
+  // Build explanation
+  let explanation = '';
+  if (dataPoints.length > 0) {
+    if (kAnonymity === 1) {
+      explanation = `Mit diesen Informationen bist du **weltweit einzigartig identifizierbar**. Es gibt wahrscheinlich nur eine Person mit genau diesen Merkmalen.`;
+    } else {
+      explanation = `Diese Kombination von Daten grenzt dich auf ungefähr ${kAnonymity} Personen ein.`;
+    }
+  } else {
+    explanation = 'Keine kritischen Datenpunkte erkannt.';
+  }
+
+  // Generate combination risk visualization
+  const combinationFormula = dataPoints
+    .map(dp => {
+      const icon = dp.type === 'full_name' ? '👤' : dp.type === 'age' ? '🎂' : dp.type === 'address' ? '📍' :
+                   dp.type === 'employer' ? '🏢' : dp.type === 'email' ? '📧' : dp.type === 'phone' ? '📱' : '📊';
+      return icon;
+    })
+    .join(' + ');
+
+  // Generate real-world threats
+  const realWorldThreats = [];
+  if (dataPoints.some(dp => dp.type === 'address')) {
+    realWorldThreats.push({
+      threat: 'Stalking',
+      description: 'Jemand könnte dich physisch aufsuchen',
+      likelihood: 'medium'
+    });
+  }
+  if (dataPoints.some(dp => ['full_name', 'email', 'employer'].includes(dp.type))) {
+    realWorldThreats.push({
+      threat: 'Spear-Phishing',
+      description: 'Gezielte Betrugs-Mails mit deinen echten Daten',
+      likelihood: 'high'
+    });
+  }
+  if (dataPoints.length >= 2) {
+    realWorldThreats.push({
+      threat: 'Identitätsdiebstahl',
+      description: 'Jemand gibt sich als du aus',
+      likelihood: riskScore > 70 ? 'high' : 'medium'
+    });
+  }
+
+  // Generate recommendations
+  const recommendations = dataPoints
+    .filter(dp => dp.risk === 'critical' || dp.risk === 'high')
+    .map((dp, i) => {
+      let safeAlternative = '';
+      switch(dp.type) {
+        case 'address': safeAlternative = 'Erwähne nur die Stadt oder Region'; break;
+        case 'full_name': safeAlternative = 'Nutze nur den Vornamen oder ein Pseudonym'; break;
+        case 'employer': safeAlternative = 'Erwähne nur die Branche ("in der Automobilbranche")'; break;
+        case 'phone': safeAlternative = 'Teile die Nummer nur privat per Nachricht'; break;
+        case 'email': safeAlternative = 'Nutze eine Alias-Adresse'; break;
+        case 'iban': safeAlternative = 'Teile Bankdaten niemals öffentlich'; break;
+        default: safeAlternative = 'Entferne oder verallgemeinere diese Information';
+      }
+      return {
+        priority: i + 1,
+        action: `${RISK_TYPE_EXPLANATIONS[dp.type]?.name || dp.type} entfernen`,
+        impact: `Reduziert Risiko um ${Math.round(dp.uniquenessContribution * 100)}%`,
+        safeAlternative
+      };
+    });
+
+  // Generate safe version of text
+  let safeVersion = text;
+  for (const dp of dataPoints) {
+    if (dp.risk === 'critical' || dp.risk === 'high') {
+      switch(dp.type) {
+        case 'address':
+          safeVersion = safeVersion.replace(new RegExp(dp.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '[Stadt]');
+          break;
+        case 'full_name':
+          const firstName = dp.value.split(' ')[0];
+          safeVersion = safeVersion.replace(dp.value, firstName);
+          break;
+        case 'employer':
+          safeVersion = safeVersion.replace(new RegExp(`bei\\s+${dp.value}`, 'gi'), 'in der Branche');
+          break;
+        case 'phone':
+          safeVersion = safeVersion.replace(new RegExp(dp.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[Telefon entfernt]');
+          break;
+        case 'iban':
+          safeVersion = safeVersion.replace(new RegExp(dp.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[IBAN entfernt]');
+          break;
+        case 'email':
+          safeVersion = safeVersion.replace(new RegExp(dp.value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), '[E-Mail entfernt]');
+          break;
+      }
+    }
+  }
+
+  const remainingRisk = Math.max(5, riskScore - recommendations.reduce((sum, r) => sum + parseInt(r.impact.match(/\d+/)?.[0] || 0), 0));
+
+  res.json({
+    success: true,
+    analysis: {
+      overallAssessment,
+      riskScore,
+      identifiability,
+      kAnonymity,
+      explanation
+    },
+    dataPoints,
+    combinationRisk: {
+      explanation: 'Die Kombination dieser Daten ist besonders gefährlich:',
+      calculation: dataPoints.map(dp => `${RISK_TYPE_EXPLANATIONS[dp.type]?.name || dp.type} (${Math.round(dp.uniquenessContribution * 100)}%)`).join(' + '),
+      visualFormula: combinationFormula + (dataPoints.length > 0 ? ` = ${riskScore > 80 ? '🎯 (eindeutig)' : riskScore > 50 ? '⚠️ (riskant)' : '✓ (okay)'}` : '')
+    },
+    realWorldThreats,
+    recommendations,
+    safeVersion: {
+      text: safeVersion,
+      remainingRisk,
+      improvement: `Risiko von ${riskScore}% auf ${remainingRisk}% reduziert`
+    }
+  });
+});
+
+// GET /api/v2/coach/topics - List learning topics
+app.get('/api/v2/coach/topics', (req, res) => {
+  const featuredTopicIndex = Math.floor(Date.now() / (24 * 60 * 60 * 1000)) % 5;
+  const allTopics = COACH_TOPICS.categories.flatMap(c => c.topics);
+  const featuredTopic = allTopics[featuredTopicIndex % allTopics.length];
+
+  res.json({
+    success: true,
+    categories: COACH_TOPICS.categories,
+    featuredTopic: {
+      id: featuredTopic.id,
+      title: featuredTopic.title,
+      description: featuredTopic.description,
+      badge: 'Empfohlen'
+    }
+  });
+});
+
+// GET /api/v2/coach/topic/:topicId - Get topic details
+app.get('/api/v2/coach/topic/:topicId', (req, res) => {
+  const { topicId } = req.params;
+
+  // Find topic in categories
+  let topicMeta = null;
+  for (const category of COACH_TOPICS.categories) {
+    const found = category.topics.find(t => t.id === topicId);
+    if (found) {
+      topicMeta = found;
+      break;
+    }
+  }
+
+  if (!topicMeta) {
+    return res.status(404).json({
+      error: 'Thema nicht gefunden',
+      availableTopics: COACH_TOPICS.categories.flatMap(c => c.topics.map(t => t.id))
+    });
+  }
+
+  // Get content
+  const content = TOPIC_CONTENT[topicId];
+
+  if (!content) {
+    // Return basic topic info without detailed content
+    return res.json({
+      success: true,
+      topic: {
+        id: topicMeta.id,
+        title: topicMeta.title,
+        icon: topicMeta.icon,
+        difficulty: topicMeta.difficulty,
+        duration: topicMeta.duration,
+        lastUpdated: new Date().toISOString().split('T')[0]
+      },
+      content: {
+        introduction: `${topicMeta.title} - ${topicMeta.description}. Detaillierte Inhalte werden bald verfügbar sein.`,
+        sections: [],
+        keyTakeaways: ['Weitere Informationen folgen'],
+        relatedTopics: []
+      },
+      progress: {
+        completed: false,
+        percentComplete: 0
+      }
+    });
+  }
+
+  res.json({
+    success: true,
+    topic: {
+      id: topicMeta.id,
+      title: topicMeta.title,
+      icon: topicMeta.icon,
+      difficulty: topicMeta.difficulty,
+      duration: topicMeta.duration,
+      lastUpdated: new Date().toISOString().split('T')[0]
+    },
+    content: {
+      introduction: content.introduction,
+      sections: content.sections,
+      keyTakeaways: content.keyTakeaways,
+      relatedTopics: content.relatedTopics
+    },
+    progress: {
+      completed: false,
+      percentComplete: 0
+    }
+  });
+});
+
+// POST /api/v2/coach/session - Create or load session
+app.post('/api/v2/coach/session', (req, res) => {
+  const { action, sessionId, userProfile = {} } = req.body;
+
+  if (action === 'load' && sessionId) {
+    const session = coachSessions.get(sessionId);
+    if (!session) {
+      return res.status(404).json({
+        error: 'Session nicht gefunden oder abgelaufen'
+      });
+    }
+
+    session.lastActivity = new Date().toISOString();
+
+    return res.json({
+      success: true,
+      session: {
+        id: session.id,
+        createdAt: session.createdAt,
+        expiresAt: session.expiresAt,
+        userProfile: session.userProfile,
+        conversationHistory: session.conversationHistory,
+        context: session.context
+      }
+    });
+  }
+
+  // Create new session
+  const session = getOrCreateSession(null, userProfile);
+
+  const lang = userProfile.language || 'de';
+  const welcomeMessage = {
+    message: COACH_TEMPLATES.greeting[lang] || COACH_TEMPLATES.greeting.de,
+    suggestions: [
+      { text: 'Was sind personenbezogene Daten?', action: 'ask' },
+      { text: 'Analysiere meinen Text', action: 'analyze' },
+      { text: 'Zeige mir Lern-Themen', action: 'topics' }
+    ]
+  };
+
+  res.json({
+    success: true,
+    session: {
+      id: session.id,
+      createdAt: session.createdAt,
+      expiresAt: session.expiresAt,
+      userProfile: session.userProfile,
+      conversationHistory: [],
+      context: session.context
+    },
+    welcomeMessage
+  });
+});
+
+// POST /api/v2/coach/feedback - Submit feedback
+app.post('/api/v2/coach/feedback', (req, res) => {
+  const { sessionId, messageId, rating, comment } = req.body;
+
+  if (!rating) {
+    return res.status(400).json({
+      error: 'Bewertung erforderlich'
+    });
+  }
+
+  const validRatings = ['helpful', 'not_helpful', 'incorrect', 'offensive'];
+  if (!validRatings.includes(rating)) {
+    return res.status(400).json({
+      error: 'Ungültige Bewertung',
+      validRatings
+    });
+  }
+
+  // Store feedback (anonymized)
+  coachFeedback.push({
+    id: 'fb_' + Date.now().toString(36),
+    timestamp: new Date().toISOString(),
+    rating,
+    hasComment: !!comment,
+    commentLength: comment ? comment.length : 0
+    // Note: We don't store sessionId, messageId, or actual comment content for privacy
+  });
+
+  // Keep only last 1000 feedback entries
+  while (coachFeedback.length > 1000) {
+    coachFeedback.shift();
+  }
+
+  const messages = {
+    helpful: 'Danke für dein positives Feedback! Es hilft mir, besser zu werden.',
+    not_helpful: 'Danke für dein Feedback. Ich werde versuchen, mich zu verbessern.',
+    incorrect: 'Danke für die Korrektur! Ich lerne ständig dazu.',
+    offensive: 'Danke für den Hinweis. Wir werden das überprüfen.'
+  };
+
+  res.json({
+    success: true,
+    message: messages[rating] || 'Danke für dein Feedback!'
+  });
+});
+
+// GET /api/v2/coach/quick-tips - Get quick privacy tips
+app.get('/api/v2/coach/quick-tips', (req, res) => {
+  const { count = 2, category } = req.query;
+
+  let filteredTips = QUICK_TIPS;
+  if (category) {
+    filteredTips = QUICK_TIPS.filter(t => t.category === category);
+  }
+
+  // Shuffle and pick tips
+  const shuffled = [...filteredTips].sort(() => 0.5 - Math.random());
+  const selectedTips = shuffled.slice(0, Math.min(parseInt(count), 5)).map(tip => ({
+    id: tip.id,
+    icon: tip.icon,
+    title: tip.title,
+    content: tip.content,
+    category: tip.category,
+    actionButton: {
+      text: 'Mehr erfahren',
+      action: 'topic',
+      params: { topicId: tip.category }
+    }
+  }));
+
+  // Get daily challenge
+  const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0)) / (24 * 60 * 60 * 1000));
+  const dailyChallenge = DAILY_CHALLENGES[dayOfYear % DAILY_CHALLENGES.length];
+
+  res.json({
+    success: true,
+    tips: selectedTips,
+    dailyChallenge: {
+      title: dailyChallenge.title,
+      description: dailyChallenge.description,
+      reward: dailyChallenge.reward,
+      difficulty: dailyChallenge.difficulty
+    }
   });
 });
 
