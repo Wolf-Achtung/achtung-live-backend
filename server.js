@@ -3951,6 +3951,677 @@ function extractDomain(url) {
 }
 
 // ===========================================
+// Phase 6: Browser Extension Pro
+// ===========================================
+
+// Sensitive field keywords (German and English)
+const SENSITIVE_FIELD_KEYWORDS = [
+  // Identity
+  { keyword: 'ssn', category: 'identity', severity: 'critical', reason: 'Sozialversicherungsnummer wird selten benötigt' },
+  { keyword: 'social_security', category: 'identity', severity: 'critical', reason: 'Sozialversicherungsnummer wird selten benötigt' },
+  { keyword: 'sozialversicherung', category: 'identity', severity: 'critical', reason: 'Sozialversicherungsnummer wird selten benötigt' },
+  { keyword: 'tax_id', category: 'identity', severity: 'critical', reason: 'Steuer-ID wird nur für offizielle Dokumente benötigt' },
+  { keyword: 'steuernummer', category: 'identity', severity: 'critical', reason: 'Steuer-ID wird nur für offizielle Dokumente benötigt' },
+  { keyword: 'steuer_id', category: 'identity', severity: 'critical', reason: 'Steuer-ID wird nur für offizielle Dokumente benötigt' },
+  { keyword: 'passport', category: 'identity', severity: 'critical', reason: 'Passnummer ist hochsensibel' },
+  { keyword: 'reisepass', category: 'identity', severity: 'critical', reason: 'Passnummer ist hochsensibel' },
+  { keyword: 'ausweis', category: 'identity', severity: 'critical', reason: 'Ausweisnummer ist hochsensibel' },
+  { keyword: 'personalausweis', category: 'identity', severity: 'critical', reason: 'Ausweisnummer ist hochsensibel' },
+  { keyword: 'national_id', category: 'identity', severity: 'critical', reason: 'Ausweisnummer ist hochsensibel' },
+
+  // Security questions
+  { keyword: 'mother_maiden', category: 'security', severity: 'high', reason: 'Sicherheitsfragen sind oft unsicher' },
+  { keyword: 'mädchenname', category: 'security', severity: 'high', reason: 'Sicherheitsfragen sind oft unsicher' },
+  { keyword: 'maiden_name', category: 'security', severity: 'high', reason: 'Sicherheitsfragen sind oft unsicher' },
+  { keyword: 'geburtsort', category: 'security', severity: 'high', reason: 'Geburtsort wird oft für Sicherheitsfragen missbraucht' },
+  { keyword: 'birthplace', category: 'security', severity: 'high', reason: 'Geburtsort wird oft für Sicherheitsfragen missbraucht' },
+  { keyword: 'pet_name', category: 'security', severity: 'medium', reason: 'Haustiername ist eine häufige Sicherheitsfrage' },
+
+  // Financial
+  { keyword: 'credit_card', category: 'financial', severity: 'critical', reason: 'Kreditkartendaten sind hochsensibel' },
+  { keyword: 'kreditkarte', category: 'financial', severity: 'critical', reason: 'Kreditkartendaten sind hochsensibel' },
+  { keyword: 'card_number', category: 'financial', severity: 'critical', reason: 'Kartennummer ist hochsensibel' },
+  { keyword: 'cvv', category: 'financial', severity: 'critical', reason: 'CVV sollte nie gespeichert werden' },
+  { keyword: 'income', category: 'financial', severity: 'high', reason: 'Einkommensdaten werden selten benötigt' },
+  { keyword: 'einkommen', category: 'financial', severity: 'high', reason: 'Einkommensdaten werden selten benötigt' },
+  { keyword: 'salary', category: 'financial', severity: 'high', reason: 'Gehaltsdaten werden selten benötigt' },
+  { keyword: 'gehalt', category: 'financial', severity: 'high', reason: 'Gehaltsdaten werden selten benötigt' },
+  { keyword: 'bank_account', category: 'financial', severity: 'high', reason: 'Bankdaten nur für Zahlungen nötig' },
+  { keyword: 'kontonummer', category: 'financial', severity: 'high', reason: 'Bankdaten nur für Zahlungen nötig' },
+  { keyword: 'iban', category: 'financial', severity: 'high', reason: 'IBAN nur für direkte Zahlungen nötig' },
+
+  // Health
+  { keyword: 'health_insurance', category: 'health', severity: 'high', reason: 'Krankenversicherungsdaten sind sensibel' },
+  { keyword: 'krankenversicherung', category: 'health', severity: 'high', reason: 'Krankenversicherungsdaten sind sensibel' },
+  { keyword: 'medical', category: 'health', severity: 'high', reason: 'Medizinische Daten sind besonders geschützt' },
+  { keyword: 'diagnosis', category: 'health', severity: 'critical', reason: 'Diagnosen sind höchst sensibel' },
+  { keyword: 'diagnose', category: 'health', severity: 'critical', reason: 'Diagnosen sind höchst sensibel' }
+];
+
+// Dark patterns database
+const DARK_PATTERNS_DATABASE = [
+  {
+    id: 'confirmshaming',
+    name: 'Confirmshaming',
+    nameDE: 'Beschämende Ablehnung',
+    description: 'Uses guilt-tripping language to discourage declining',
+    descriptionDE: 'Beschämende Sprache für die Ablehn-Option',
+    severity: 'medium',
+    examples: ['Nein, ich hasse Geld sparen', 'No thanks, I prefer paying full price'],
+    detection: {
+      buttonTextPatterns: [
+        /nein.*hasse/i, /nein.*mag nicht/i, /nein.*kein interesse/i,
+        /no.*hate/i, /no.*don't want/i, /no.*prefer not/i
+      ],
+      visualCues: ['text-muted', 'small', 'btn-link', 'text-secondary']
+    }
+  },
+  {
+    id: 'hidden_checkbox',
+    name: 'Hidden Pre-checked Checkbox',
+    nameDE: 'Versteckte voraktivierte Checkbox',
+    description: 'Pre-selected checkbox hidden or barely visible',
+    descriptionDE: 'Vorab aktivierte, versteckte oder kaum sichtbare Checkbox',
+    severity: 'critical',
+    examples: ['Hidden newsletter signup', 'Invisible data sharing consent'],
+    detection: {
+      checkboxStates: { checked: true, visible: false },
+      cssPatterns: ['display:none', 'opacity:0', 'visibility:hidden', 'height:0']
+    }
+  },
+  {
+    id: 'preselected_option',
+    name: 'Pre-selected Options',
+    nameDE: 'Vorausgewählte Optionen',
+    description: 'Options pre-selected to benefit the company',
+    descriptionDE: 'Optionen sind vorausgewählt zum Vorteil des Unternehmens',
+    severity: 'high',
+    examples: ['Newsletter subscription checked by default', 'Insurance addon selected'],
+    detection: {
+      checkboxStates: { checked: true, visible: true }
+    }
+  },
+  {
+    id: 'fake_urgency',
+    name: 'Fake Urgency',
+    nameDE: 'Künstliche Dringlichkeit',
+    description: 'Artificial countdown timers or deadline pressure',
+    descriptionDE: 'Gefälschte Timer oder Deadline-Druck',
+    severity: 'medium',
+    examples: ['Sale ends in 00:05:00', 'Offer expires today'],
+    detection: {
+      textPatterns: [
+        /nur noch \d+/i, /endet in/i, /letzte chance/i, /beeilen/i,
+        /only \d+ left/i, /ends in/i, /last chance/i, /hurry/i,
+        /\d{2}:\d{2}:\d{2}/, /countdown/i
+      ]
+    }
+  },
+  {
+    id: 'fake_scarcity',
+    name: 'Fake Scarcity',
+    nameDE: 'Künstliche Knappheit',
+    description: 'Fabricated low stock warnings',
+    descriptionDE: 'Erfundene Knappheitswarnungen',
+    severity: 'medium',
+    examples: ['Only 2 left!', '23 people viewing this'],
+    detection: {
+      textPatterns: [
+        /nur noch \d+ (auf lager|verfügbar|übrig)/i,
+        /\d+ (andere|personen|besucher) (schauen|sehen)/i,
+        /only \d+ left/i, /\d+ (people|others) (viewing|watching)/i,
+        /low stock/i, /fast ausverkauft/i
+      ]
+    }
+  },
+  {
+    id: 'trick_questions',
+    name: 'Trick Questions',
+    nameDE: 'Verwirrende Fragen',
+    description: 'Double negatives or confusing wording',
+    descriptionDE: 'Doppelte Verneinungen oder verwirrende Formulierungen',
+    severity: 'high',
+    examples: ['Uncheck to not receive', 'Check to opt out of not receiving'],
+    detection: {
+      textPatterns: [
+        /nicht.*nicht/i, /kein.*nicht/i, /abwählen.*um.*nicht/i,
+        /don't.*not/i, /uncheck.*not/i, /opt out.*not/i
+      ]
+    }
+  },
+  {
+    id: 'sneak_into_basket',
+    name: 'Sneak into Basket',
+    nameDE: 'Heimliches Hinzufügen',
+    description: 'Items automatically added to cart',
+    descriptionDE: 'Artikel werden automatisch zum Warenkorb hinzugefügt',
+    severity: 'high',
+    examples: ['Insurance automatically added', 'Extended warranty in cart']
+  },
+  {
+    id: 'roach_motel',
+    name: 'Roach Motel',
+    nameDE: 'Hotel California',
+    description: 'Easy to sign up, hard to cancel',
+    descriptionDE: 'Einfach anzumelden, schwer zu kündigen',
+    severity: 'high',
+    examples: ['No cancel button', 'Must call to cancel'],
+    detection: {
+      textPatterns: [
+        /anrufen.*kündigen/i, /schriftlich.*kündigen/i,
+        /call to cancel/i, /write to cancel/i
+      ]
+    }
+  },
+  {
+    id: 'privacy_zuckering',
+    name: 'Privacy Zuckering',
+    nameDE: 'Verwirrende Datenschutzeinstellungen',
+    description: 'Confusing privacy settings that trick into sharing more',
+    descriptionDE: 'Verwirrende Datenschutzeinstellungen',
+    severity: 'critical',
+    examples: ['Complex privacy dashboard', 'Hidden opt-out']
+  },
+  {
+    id: 'bait_and_switch',
+    name: 'Bait and Switch',
+    nameDE: 'Lockvogel-Taktik',
+    description: 'Advertised item not available, pushed to alternatives',
+    descriptionDE: 'Beworbenes Produkt nicht verfügbar',
+    severity: 'medium',
+    examples: ['Product unavailable, see alternatives', 'Price changed at checkout']
+  }
+];
+
+// Tracker database
+const TRACKER_DATABASE = {
+  // Analytics
+  'google-analytics.com': {
+    name: 'Google Analytics',
+    company: 'Google',
+    category: 'analytics',
+    risk: 'medium',
+    cookies: ['_ga', '_gid', '_gat', '__utma', '__utmb', '__utmc', '__utmz'],
+    description: 'Web-Analyse und Nutzungsstatistiken'
+  },
+  'analytics.google.com': {
+    name: 'Google Analytics 4',
+    company: 'Google',
+    category: 'analytics',
+    risk: 'medium',
+    cookies: ['_ga', '_ga_*'],
+    description: 'Neueste Version von Google Analytics'
+  },
+  'matomo.cloud': {
+    name: 'Matomo',
+    company: 'Matomo',
+    category: 'analytics',
+    risk: 'low',
+    cookies: ['_pk_id', '_pk_ses'],
+    description: 'Datenschutzfreundliche Analytics'
+  },
+  'plausible.io': {
+    name: 'Plausible',
+    company: 'Plausible',
+    category: 'analytics',
+    risk: 'low',
+    cookies: [],
+    description: 'Cookie-freie Analytics'
+  },
+
+  // Marketing/Social
+  'facebook.com': {
+    name: 'Facebook Pixel',
+    company: 'Meta',
+    category: 'marketing',
+    risk: 'high',
+    cookies: ['_fbp', 'fr', 'datr', 'sb'],
+    description: 'Tracking für Facebook-Werbung'
+  },
+  'connect.facebook.net': {
+    name: 'Facebook SDK',
+    company: 'Meta',
+    category: 'marketing',
+    risk: 'high',
+    cookies: ['_fbp'],
+    description: 'Facebook Social Plugins'
+  },
+  'twitter.com': {
+    name: 'Twitter Analytics',
+    company: 'X Corp',
+    category: 'marketing',
+    risk: 'medium',
+    cookies: ['guest_id', 'personalization_id'],
+    description: 'Twitter Tracking und Widgets'
+  },
+  'linkedin.com': {
+    name: 'LinkedIn Insight',
+    company: 'Microsoft',
+    category: 'marketing',
+    risk: 'medium',
+    cookies: ['li_gc', 'bcookie', 'bscookie'],
+    description: 'LinkedIn Business Analytics'
+  },
+  'tiktok.com': {
+    name: 'TikTok Pixel',
+    company: 'ByteDance',
+    category: 'marketing',
+    risk: 'high',
+    cookies: ['_ttp', 'tt_webid'],
+    description: 'TikTok Werbe-Tracking'
+  },
+
+  // Advertising
+  'doubleclick.net': {
+    name: 'DoubleClick',
+    company: 'Google',
+    category: 'advertising',
+    risk: 'high',
+    cookies: ['IDE', 'DSID', 'id'],
+    description: 'Google Werbenetzwerk'
+  },
+  'googlesyndication.com': {
+    name: 'Google AdSense',
+    company: 'Google',
+    category: 'advertising',
+    risk: 'high',
+    cookies: ['__gads', '__gpi'],
+    description: 'Google Anzeigen'
+  },
+  'googleadservices.com': {
+    name: 'Google Ads',
+    company: 'Google',
+    category: 'advertising',
+    risk: 'high',
+    cookies: ['_gcl_au', '_gcl_aw'],
+    description: 'Google Ads Conversion'
+  },
+  'criteo.com': {
+    name: 'Criteo',
+    company: 'Criteo',
+    category: 'advertising',
+    risk: 'high',
+    cookies: ['uid', 'cto_bundle'],
+    description: 'Retargeting-Werbung'
+  },
+  'taboola.com': {
+    name: 'Taboola',
+    company: 'Taboola',
+    category: 'advertising',
+    risk: 'high',
+    cookies: ['taboola_usg', 't_gid'],
+    description: 'Content-Empfehlungen und Werbung'
+  },
+  'outbrain.com': {
+    name: 'Outbrain',
+    company: 'Outbrain',
+    category: 'advertising',
+    risk: 'high',
+    cookies: ['obuid'],
+    description: 'Content-Empfehlungen'
+  },
+
+  // Session Recording
+  'hotjar.com': {
+    name: 'Hotjar',
+    company: 'Hotjar',
+    category: 'session_recording',
+    risk: 'high',
+    cookies: ['_hjid', '_hjSessionUser', '_hjSession'],
+    description: 'Session Recording und Heatmaps'
+  },
+  'mouseflow.com': {
+    name: 'Mouseflow',
+    company: 'Mouseflow',
+    category: 'session_recording',
+    risk: 'high',
+    cookies: ['mf_user', 'mf_'],
+    description: 'Mausbewegungen und Session Recording'
+  },
+  'fullstory.com': {
+    name: 'FullStory',
+    company: 'FullStory',
+    category: 'session_recording',
+    risk: 'high',
+    cookies: ['fs_uid'],
+    description: 'Session Replay'
+  },
+
+  // Customer Data Platforms
+  'segment.io': {
+    name: 'Segment',
+    company: 'Twilio',
+    category: 'cdp',
+    risk: 'medium',
+    cookies: ['ajs_user_id', 'ajs_anonymous_id'],
+    description: 'Customer Data Platform'
+  },
+  'amplitude.com': {
+    name: 'Amplitude',
+    company: 'Amplitude',
+    category: 'analytics',
+    risk: 'medium',
+    cookies: ['amplitude_id'],
+    description: 'Product Analytics'
+  },
+  'mixpanel.com': {
+    name: 'Mixpanel',
+    company: 'Mixpanel',
+    category: 'analytics',
+    risk: 'medium',
+    cookies: ['mp_*'],
+    description: 'Product Analytics'
+  }
+};
+
+// Tracker categories
+const TRACKER_CATEGORIES = {
+  analytics: {
+    risk: 'medium',
+    description: 'Nutzungsanalyse',
+    descriptionEN: 'Usage analytics',
+    impact: 'Sammelt Daten über Ihr Nutzungsverhalten'
+  },
+  marketing: {
+    risk: 'high',
+    description: 'Marketing & Retargeting',
+    descriptionEN: 'Marketing and retargeting',
+    impact: 'Verfolgt Sie über verschiedene Websites'
+  },
+  advertising: {
+    risk: 'high',
+    description: 'Werbenetzwerke',
+    descriptionEN: 'Advertising networks',
+    impact: 'Erstellt Werbeprofile über Sie'
+  },
+  session_recording: {
+    risk: 'high',
+    description: 'Session Recording',
+    descriptionEN: 'Session recording',
+    impact: 'Zeichnet Ihre Mausbewegungen und Eingaben auf'
+  },
+  cdp: {
+    risk: 'medium',
+    description: 'Kundendaten-Plattform',
+    descriptionEN: 'Customer data platform',
+    impact: 'Sammelt und verknüpft Ihre Daten'
+  }
+};
+
+// Helper: Analyze form fields for sensitivity
+function analyzeFormField(field) {
+  const fieldName = (field.name || '').toLowerCase();
+  const fieldLabel = (field.label || '').toLowerCase();
+  const combined = `${fieldName} ${fieldLabel}`;
+
+  for (const sensitiveField of SENSITIVE_FIELD_KEYWORDS) {
+    if (combined.includes(sensitiveField.keyword)) {
+      return {
+        isSensitive: true,
+        field: field.name,
+        reason: sensitiveField.reason,
+        category: sensitiveField.category,
+        severity: sensitiveField.severity,
+        recommendation: `Frage nach dem Grund für "${field.label || field.name}"`
+      };
+    }
+  }
+
+  return { isSensitive: false };
+}
+
+// Helper: Calculate form risk score
+function calculateFormRiskScore(sensitiveFields, totalFields) {
+  if (totalFields === 0) return 0;
+
+  let riskScore = 0;
+
+  sensitiveFields.forEach(field => {
+    switch (field.severity) {
+      case 'critical': riskScore += 30; break;
+      case 'high': riskScore += 20; break;
+      case 'medium': riskScore += 10; break;
+      case 'low': riskScore += 5; break;
+    }
+  });
+
+  // Additional risk for many fields
+  if (totalFields > 10) riskScore += 10;
+  if (totalFields > 20) riskScore += 10;
+
+  return Math.min(100, riskScore);
+}
+
+// Helper: Detect dark patterns in page elements
+function detectDarkPatterns(elements) {
+  const findings = [];
+
+  // Analyze buttons
+  if (elements.buttons) {
+    elements.buttons.forEach(button => {
+      const buttonText = (button.text || '').toLowerCase();
+      const classes = button.classes || [];
+
+      // Check for confirmshaming
+      const confirmshaming = DARK_PATTERNS_DATABASE.find(p => p.id === 'confirmshaming');
+      if (confirmshaming.detection.buttonTextPatterns.some(pattern => pattern.test(buttonText))) {
+        findings.push({
+          type: 'confirmshaming',
+          element: 'button',
+          description: confirmshaming.descriptionDE,
+          severity: confirmshaming.severity,
+          evidence: button.text
+        });
+      }
+
+      // Check for visually suppressed decline buttons
+      if (buttonText.includes('nein') || buttonText.includes('ablehnen') || buttonText.includes('no')) {
+        const suppressedClasses = ['text-muted', 'small', 'btn-link', 'text-secondary', 'text-gray'];
+        if (classes.some(c => suppressedClasses.includes(c))) {
+          findings.push({
+            type: 'confirmshaming',
+            element: 'button',
+            description: 'Ablehn-Button ist visuell unterdrückt',
+            severity: 'medium',
+            evidence: `Classes: ${classes.join(', ')}`
+          });
+        }
+      }
+    });
+  }
+
+  // Analyze checkboxes
+  if (elements.checkboxes) {
+    elements.checkboxes.forEach(checkbox => {
+      if (checkbox.checked && !checkbox.visible) {
+        findings.push({
+          type: 'hidden_checkbox',
+          element: 'checkbox',
+          description: 'Vorab aktivierte, versteckte Checkbox',
+          severity: 'critical',
+          evidence: checkbox.label
+        });
+      } else if (checkbox.checked && checkbox.visible) {
+        findings.push({
+          type: 'preselected_option',
+          element: 'checkbox',
+          description: 'Vorab aktivierte Option',
+          severity: 'high',
+          evidence: checkbox.label
+        });
+      }
+    });
+  }
+
+  // Analyze text content
+  if (elements.text) {
+    const allText = elements.text.join(' ').toLowerCase();
+
+    // Check for fake urgency
+    const fakeUrgency = DARK_PATTERNS_DATABASE.find(p => p.id === 'fake_urgency');
+    if (fakeUrgency.detection.textPatterns.some(pattern => pattern.test(allText))) {
+      findings.push({
+        type: 'fake_urgency',
+        element: 'text',
+        description: fakeUrgency.descriptionDE,
+        severity: fakeUrgency.severity
+      });
+    }
+
+    // Check for fake scarcity
+    const fakeScarcity = DARK_PATTERNS_DATABASE.find(p => p.id === 'fake_scarcity');
+    if (fakeScarcity.detection.textPatterns.some(pattern => pattern.test(allText))) {
+      findings.push({
+        type: 'fake_scarcity',
+        element: 'text',
+        description: fakeScarcity.descriptionDE,
+        severity: fakeScarcity.severity
+      });
+    }
+
+    // Check for trick questions
+    const trickQuestions = DARK_PATTERNS_DATABASE.find(p => p.id === 'trick_questions');
+    if (trickQuestions.detection.textPatterns.some(pattern => pattern.test(allText))) {
+      findings.push({
+        type: 'trick_questions',
+        element: 'text',
+        description: trickQuestions.descriptionDE,
+        severity: trickQuestions.severity
+      });
+    }
+  }
+
+  return findings;
+}
+
+// Helper: Calculate dark pattern score
+function calculateDarkPatternScore(patterns) {
+  if (patterns.length === 0) return 0;
+
+  let score = 0;
+  patterns.forEach(pattern => {
+    switch (pattern.severity) {
+      case 'critical': score += 35; break;
+      case 'high': score += 25; break;
+      case 'medium': score += 15; break;
+      case 'low': score += 5; break;
+    }
+  });
+
+  return Math.min(100, score);
+}
+
+// Helper: Calculate cookie compliance score
+function calculateComplianceScore(issues) {
+  let score = 100;
+
+  issues.forEach(issue => {
+    switch (issue.severity) {
+      case 'critical': score -= 30; break;
+      case 'high': score -= 20; break;
+      case 'medium': score -= 10; break;
+      case 'low': score -= 5; break;
+    }
+  });
+
+  return Math.max(0, score);
+}
+
+// Helper: Analyze cookie consent banner
+function analyzeConsentBanner(consentBanner, detectedTrackers) {
+  const issues = [];
+
+  if (consentBanner.found) {
+    // Check for missing reject all
+    if (!consentBanner.hasRejectAll) {
+      issues.push({
+        type: 'missing_reject_all',
+        severity: 'high',
+        description: 'Kein "Alle ablehnen" Button vorhanden',
+        gdprViolation: true,
+        recommendation: 'DSGVO erfordert gleichwertige Ablehn-Option'
+      });
+    } else if (!consentBanner.rejectAllVisible) {
+      issues.push({
+        type: 'hidden_reject_all',
+        severity: 'high',
+        description: '"Alle ablehnen" Button ist versteckt oder schwer zu finden',
+        gdprViolation: true
+      });
+    }
+
+    // Check for prominent accept all
+    if (consentBanner.acceptAllProminent && !consentBanner.rejectAllVisible) {
+      issues.push({
+        type: 'asymmetric_buttons',
+        severity: 'medium',
+        description: 'Akzeptieren-Button ist prominenter als Ablehnen',
+        gdprViolation: true
+      });
+    }
+  } else {
+    // No consent banner but trackers detected
+    if (detectedTrackers && detectedTrackers.length > 0) {
+      issues.push({
+        type: 'missing_consent_banner',
+        severity: 'critical',
+        description: 'Tracker ohne Cookie-Banner gefunden',
+        gdprViolation: true
+      });
+    }
+  }
+
+  // Check for undeclared trackers
+  if (consentBanner.found && detectedTrackers) {
+    const undeclared = detectedTrackers.filter(t => t.type === 'unknown' || !t.declared);
+    if (undeclared.length > 0) {
+      issues.push({
+        type: 'undeclared_trackers',
+        severity: 'critical',
+        description: 'Nicht deklarierte Tracker gefunden',
+        gdprViolation: true,
+        trackers: undeclared.map(t => t.domain || t.name)
+      });
+    }
+  }
+
+  return issues;
+}
+
+// Helper: Generate quick actions for findings
+function generateQuickActions(text, findings) {
+  const actions = [];
+
+  findings.forEach(finding => {
+    if (finding.match) {
+      actions.push({
+        action: 'anonymize',
+        label: `${finding.type === 'full_name' ? 'Namen' : finding.type} anonymisieren`,
+        replacement: text.replace(finding.match, `[${finding.type.toUpperCase()}]`)
+      });
+    }
+  });
+
+  if (findings.length > 0) {
+    // Add a "remove all" action
+    let cleanedText = text;
+    findings.forEach(f => {
+      if (f.match) {
+        cleanedText = cleanedText.replace(f.match, '[ENTFERNT]');
+      }
+    });
+
+    actions.push({
+      action: 'remove_all',
+      label: 'Alle sensiblen Daten entfernen',
+      replacement: cleanedText
+    });
+  }
+
+  return actions;
+}
+
+// ===========================================
 // Phase 11: Privacy Templates
 // ===========================================
 
@@ -5065,8 +5736,8 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '13.0.0',
-    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint', 'dataBreachAlerts', 'privacyCoach', 'privacyTemplates', 'policyAnalyzer'],
+    version: '14.0.0',
+    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint', 'dataBreachAlerts', 'privacyCoach', 'privacyTemplates', 'policyAnalyzer', 'browserExtension'],
     languages: SUPPORTED_LANGUAGES,
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
@@ -6016,7 +6687,7 @@ app.get('/api/v2/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '13.0.0',
+    version: '14.0.0',
     timestamp: new Date().toISOString(),
     providers: {
       openai: {
@@ -6091,6 +6762,14 @@ app.get('/api/v2/health', (req, res) => {
       policyPatterns: Object.keys(PRIVACY_POLICY_PATTERNS).length,
       features: ['analyze', 'knownService', 'servicesList', 'compare']
     },
+    browserExtension: {
+      enabled: true,
+      sensitiveFieldKeywords: SENSITIVE_FIELD_KEYWORDS.length,
+      darkPatterns: DARK_PATTERNS_DATABASE.length,
+      trackers: Object.keys(TRACKER_DATABASE).length,
+      trackerCategories: Object.keys(TRACKER_CATEGORIES).length,
+      features: ['analyzeField', 'analyzeForm', 'detectDarkPatterns', 'analyzeCookies', 'darkPatternsDB', 'trackerDB']
+    },
     pwa: {
       offlinePatternsEndpoint: '/api/v2/patterns/offline',
       pingEndpoint: '/api/v2/ping'
@@ -6139,6 +6818,11 @@ app.get('/api/v2/health', (req, res) => {
       policy: [
         '/api/v2/policy/analyze', '/api/v2/policy/known/:domain',
         '/api/v2/policy/services', '/api/v2/policy/compare'
+      ],
+      extension: [
+        '/api/v2/extension/analyze-field', '/api/v2/extension/analyze-form',
+        '/api/v2/extension/detect-dark-patterns', '/api/v2/extension/analyze-cookies',
+        '/api/v2/extension/dark-patterns', '/api/v2/extension/tracker-database'
       ]
     }
   });
@@ -6224,7 +6908,7 @@ app.get('/api/v2/patterns/offline', (req, res) => {
   }
 
   res.json({
-    version: '13.0.0',
+    version: '14.0.0',
     lang,
     lastUpdated: new Date().toISOString(),
     patterns,
@@ -9258,6 +9942,393 @@ app.post('/api/v2/policy/compare', (req, res) => {
       recommendation
     },
     matrix: comparisonMatrix
+  });
+});
+
+// ===========================================
+// API v2 - Phase 6 Endpoints (Browser Extension Pro)
+// ===========================================
+
+// POST /api/v2/extension/analyze-field - Real-time field analysis
+app.post('/api/v2/extension/analyze-field', (req, res) => {
+  const startTime = Date.now();
+  const { text, fieldType, fieldName, pageUrl, pageDomain, context = {} } = req.body;
+
+  if (!text) {
+    return res.status(400).json({
+      success: false,
+      error: 'Text ist erforderlich'
+    });
+  }
+
+  // Use existing pattern detection
+  const findings = detectPatterns(text);
+
+  // Calculate risk score
+  const categories = findings.map(f => ({
+    type: f.type,
+    severity: f.severity
+  }));
+  const riskScore = calculateRiskScore(categories);
+  const riskLevel = getRiskLevel(riskScore);
+
+  // Enhance findings with position data
+  const enhancedFindings = findings.map(f => ({
+    type: f.type,
+    value: f.match,
+    position: f.position,
+    severity: f.severity,
+    message: f.message,
+    suggestion: f.suggestion
+  }));
+
+  // Generate quick actions
+  const quickActions = generateQuickActions(text, findings);
+
+  // Context-aware analysis
+  let contextWarnings = [];
+  if (context.isLoginForm && findings.some(f => f.type === 'email' || f.type === 'phone')) {
+    // Normal for login forms
+  } else if (context.isPaymentForm && findings.some(f => f.type === 'credit_card' || f.type === 'iban')) {
+    // Expected for payment
+  } else if (findings.length > 0) {
+    contextWarnings.push('Sensible Daten außerhalb erwarteter Formulare erkannt');
+  }
+
+  // Add field-specific analysis
+  const fieldAnalysis = analyzeFormField({ name: fieldName, label: fieldName, type: fieldType });
+  if (fieldAnalysis.isSensitive) {
+    contextWarnings.push(fieldAnalysis.reason);
+  }
+
+  const processingTime = Date.now() - startTime;
+
+  res.json({
+    success: true,
+    data: {
+      riskScore,
+      riskLevel,
+      findings: enhancedFindings,
+      quickActions,
+      safeToSend: riskScore >= 70,
+      contextWarnings,
+      fieldAnalysis: fieldAnalysis.isSensitive ? fieldAnalysis : null
+    },
+    meta: {
+      processingTime,
+      analyzedLength: text.length,
+      pageUrl,
+      pageDomain
+    }
+  });
+});
+
+// POST /api/v2/extension/analyze-form - Full form analysis
+app.post('/api/v2/extension/analyze-form', (req, res) => {
+  const { formFields, formAction, pageUrl, pageDomain } = req.body;
+
+  if (!formFields || !Array.isArray(formFields)) {
+    return res.status(400).json({
+      success: false,
+      error: 'formFields Array ist erforderlich'
+    });
+  }
+
+  // Analyze each field for sensitivity
+  const sensitiveFields = [];
+  const unusualFields = [];
+
+  formFields.forEach(field => {
+    const analysis = analyzeFormField(field);
+    if (analysis.isSensitive) {
+      sensitiveFields.push(field);
+      unusualFields.push({
+        field: field.name,
+        label: field.label,
+        reason: analysis.reason,
+        severity: analysis.severity,
+        category: analysis.category,
+        recommendation: analysis.recommendation
+      });
+    }
+  });
+
+  // Calculate form risk score
+  const formRiskScore = calculateFormRiskScore(unusualFields, formFields.length);
+  const riskLevel = formRiskScore >= 70 ? 'high' : formRiskScore >= 40 ? 'medium' : 'low';
+
+  // Calculate data minimization score (fewer sensitive fields = better)
+  const dataMinimizationScore = formFields.length > 0
+    ? 1 - (sensitiveFields.length / formFields.length)
+    : 1;
+
+  // Generate recommendations
+  const recommendations = [];
+  if (formRiskScore >= 70) {
+    recommendations.push('Prüfe die Datenschutzerklärung vor dem Absenden');
+    recommendations.push('Fülle nur die Pflichtfelder aus');
+  }
+  if (unusualFields.some(f => f.severity === 'critical')) {
+    recommendations.push('Frage nach dem Grund für kritische Daten');
+  }
+  if (dataMinimizationScore < 0.5) {
+    recommendations.push('Dieses Formular sammelt übermäßig viele sensible Daten');
+  }
+
+  // Check form action URL
+  let formActionWarning = null;
+  if (formAction) {
+    try {
+      const actionUrl = new URL(formAction);
+      if (actionUrl.protocol !== 'https:') {
+        formActionWarning = 'Formular wird über unsichere Verbindung gesendet (HTTP)';
+        recommendations.push('Daten werden unverschlüsselt übertragen');
+      }
+      if (pageDomain && !formAction.includes(pageDomain)) {
+        formActionWarning = 'Daten werden an externe Domain gesendet';
+      }
+    } catch (e) {
+      // Invalid URL
+    }
+  }
+
+  res.json({
+    success: true,
+    data: {
+      formRiskScore,
+      riskLevel,
+      totalFields: formFields.length,
+      sensitiveFields: sensitiveFields.length,
+      unusualFields,
+      dataMinimizationScore: Math.round(dataMinimizationScore * 100) / 100,
+      formActionWarning,
+      recommendations
+    },
+    meta: {
+      pageUrl,
+      pageDomain,
+      formAction
+    }
+  });
+});
+
+// POST /api/v2/extension/detect-dark-patterns - Dark pattern detection
+app.post('/api/v2/extension/detect-dark-patterns', (req, res) => {
+  const { pageUrl, pageDomain, elements } = req.body;
+
+  if (!elements) {
+    return res.status(400).json({
+      success: false,
+      error: 'elements Objekt ist erforderlich'
+    });
+  }
+
+  // Detect dark patterns
+  const patternsFound = detectDarkPatterns(elements);
+
+  // Calculate scores
+  const darkPatternScore = calculateDarkPatternScore(patternsFound);
+  const trustScore = 100 - darkPatternScore;
+
+  // Generate recommendations based on findings
+  const recommendations = [];
+  const patternTypes = new Set(patternsFound.map(p => p.type));
+
+  if (patternTypes.has('hidden_checkbox') || patternTypes.has('preselected_option')) {
+    recommendations.push('Deaktiviere alle Checkboxen vor dem Absenden');
+  }
+  if (patternTypes.has('fake_urgency') || patternTypes.has('fake_scarcity')) {
+    recommendations.push('Ignoriere Countdown-Timer und Knappheitswarnungen');
+  }
+  if (patternTypes.has('confirmshaming')) {
+    recommendations.push('Lass dich nicht von beschämender Sprache beeinflussen');
+  }
+  if (patternTypes.has('trick_questions')) {
+    recommendations.push('Lies alle Optionen sorgfältig - achte auf doppelte Verneinungen');
+  }
+
+  // Summary by severity
+  const bySeverity = {
+    critical: patternsFound.filter(p => p.severity === 'critical').length,
+    high: patternsFound.filter(p => p.severity === 'high').length,
+    medium: patternsFound.filter(p => p.severity === 'medium').length,
+    low: patternsFound.filter(p => p.severity === 'low').length
+  };
+
+  res.json({
+    success: true,
+    data: {
+      darkPatternScore,
+      trustScore,
+      patternsFound,
+      patternCount: patternsFound.length,
+      bySeverity,
+      recommendations
+    },
+    meta: {
+      pageUrl,
+      pageDomain,
+      analyzedElements: {
+        buttons: elements.buttons?.length || 0,
+        checkboxes: elements.checkboxes?.length || 0,
+        textBlocks: elements.text?.length || 0
+      }
+    }
+  });
+});
+
+// POST /api/v2/extension/analyze-cookies - Cookie and tracker analysis
+app.post('/api/v2/extension/analyze-cookies', (req, res) => {
+  const { pageUrl, pageDomain, consentBanner, detectedTrackers } = req.body;
+
+  // Analyze consent banner
+  const issues = analyzeConsentBanner(consentBanner || { found: false }, detectedTrackers || []);
+
+  // Calculate compliance score
+  const complianceScore = calculateComplianceScore(issues);
+  const complianceLevel = complianceScore >= 80 ? 'good' : complianceScore >= 50 ? 'moderate' : 'poor';
+
+  // Analyze detected trackers
+  const trackerAnalysis = (detectedTrackers || []).map(tracker => {
+    const domain = tracker.domain || '';
+    const knownTracker = TRACKER_DATABASE[domain];
+
+    if (knownTracker) {
+      return {
+        ...tracker,
+        known: true,
+        name: knownTracker.name,
+        company: knownTracker.company,
+        category: knownTracker.category,
+        risk: knownTracker.risk,
+        description: knownTracker.description
+      };
+    }
+
+    return {
+      ...tracker,
+      known: false,
+      risk: 'unknown',
+      description: 'Unbekannter Tracker'
+    };
+  });
+
+  // Summarize trackers
+  const trackerSummary = {
+    declared: consentBanner?.declaredVendors || 0,
+    detected: trackerAnalysis.length,
+    known: trackerAnalysis.filter(t => t.known).length,
+    unknown: trackerAnalysis.filter(t => !t.known).length,
+    byCategory: {}
+  };
+
+  trackerAnalysis.forEach(t => {
+    const cat = t.category || 'unknown';
+    trackerSummary.byCategory[cat] = (trackerSummary.byCategory[cat] || 0) + 1;
+  });
+
+  // Generate recommendations
+  const recommendations = [];
+  if (issues.some(i => i.type === 'missing_reject_all')) {
+    recommendations.push('Nutze "Einstellungen" im Banner um Tracking abzulehnen');
+  }
+  if (trackerSummary.unknown > 0) {
+    recommendations.push('Unbekannte Tracker gefunden - Vorsicht geboten');
+  }
+  if (complianceScore < 50) {
+    recommendations.push('Diese Seite hat erhebliche Datenschutzprobleme');
+  }
+
+  res.json({
+    success: true,
+    data: {
+      complianceScore,
+      complianceLevel,
+      issues,
+      trackerSummary,
+      trackers: trackerAnalysis,
+      gdprViolations: issues.filter(i => i.gdprViolation).length,
+      recommendations
+    },
+    meta: {
+      pageUrl,
+      pageDomain,
+      bannerFound: consentBanner?.found || false
+    }
+  });
+});
+
+// GET /api/v2/extension/dark-patterns - Dark patterns database
+app.get('/api/v2/extension/dark-patterns', (req, res) => {
+  const patterns = DARK_PATTERNS_DATABASE.map(pattern => ({
+    id: pattern.id,
+    name: pattern.name,
+    nameDE: pattern.nameDE,
+    description: pattern.description,
+    descriptionDE: pattern.descriptionDE,
+    severity: pattern.severity,
+    examples: pattern.examples,
+    detection: pattern.detection ? {
+      buttonTextPatterns: pattern.detection.buttonTextPatterns?.map(p => p.toString()),
+      textPatterns: pattern.detection.textPatterns?.map(p => p.toString()),
+      visualCues: pattern.detection.visualCues,
+      checkboxStates: pattern.detection.checkboxStates,
+      cssPatterns: pattern.detection.cssPatterns
+    } : null
+  }));
+
+  res.json({
+    success: true,
+    patterns,
+    version: '1.0',
+    totalPatterns: patterns.length,
+    lastUpdated: '2026-01-19',
+    bySeverity: {
+      critical: patterns.filter(p => p.severity === 'critical').length,
+      high: patterns.filter(p => p.severity === 'high').length,
+      medium: patterns.filter(p => p.severity === 'medium').length,
+      low: patterns.filter(p => p.severity === 'low').length
+    }
+  });
+});
+
+// GET /api/v2/extension/tracker-database - Tracker database
+app.get('/api/v2/extension/tracker-database', (req, res) => {
+  // Format trackers for response
+  const trackers = {};
+  Object.entries(TRACKER_DATABASE).forEach(([domain, tracker]) => {
+    trackers[domain] = {
+      name: tracker.name,
+      company: tracker.company,
+      category: tracker.category,
+      risk: tracker.risk,
+      cookies: tracker.cookies,
+      description: tracker.description
+    };
+  });
+
+  // Calculate statistics
+  const stats = {
+    total: Object.keys(TRACKER_DATABASE).length,
+    byCategory: {},
+    byRisk: { low: 0, medium: 0, high: 0 },
+    byCompany: {}
+  };
+
+  Object.values(TRACKER_DATABASE).forEach(tracker => {
+    stats.byCategory[tracker.category] = (stats.byCategory[tracker.category] || 0) + 1;
+    stats.byRisk[tracker.risk] = (stats.byRisk[tracker.risk] || 0) + 1;
+    stats.byCompany[tracker.company] = (stats.byCompany[tracker.company] || 0) + 1;
+  });
+
+  res.json({
+    success: true,
+    trackers,
+    categories: TRACKER_CATEGORIES,
+    statistics: stats,
+    version: '1.0',
+    totalTrackers: Object.keys(trackers).length,
+    lastUpdated: '2026-01-19'
   });
 });
 
