@@ -3365,6 +3365,1065 @@ function generateCoachResponse(message, context, userProfile) {
   };
 }
 
+// ===========================================
+// Phase 11: Privacy Templates
+// ===========================================
+
+// Template Categories
+const TEMPLATE_CATEGORIES = [
+  {
+    id: 'social_media',
+    name: 'Social Media',
+    icon: '📱',
+    description: 'Sichere Bio-Texte für Social Media Profile',
+    subcategories: ['bio', 'posts', 'comments']
+  },
+  {
+    id: 'job_application',
+    name: 'Bewerbungen',
+    icon: '💼',
+    description: 'Datenschutzfreundliche Bewerbungstexte',
+    subcategories: ['cover_letter', 'cv_summary', 'references']
+  },
+  {
+    id: 'online_forms',
+    name: 'Online-Formulare',
+    icon: '📝',
+    description: 'Minimale Angaben für Registrierungen',
+    subcategories: ['registration', 'contact', 'surveys']
+  },
+  {
+    id: 'email_responses',
+    name: 'E-Mail Antworten',
+    icon: '✉️',
+    description: 'Ablehnungen von Datenanfragen',
+    subcategories: ['data_requests', 'marketing_optout', 'consent_withdrawal']
+  },
+  {
+    id: 'gdpr_requests',
+    name: 'DSGVO-Anfragen',
+    icon: '⚖️',
+    description: 'Auskunfts- und Löschungsanfragen',
+    subcategories: ['access', 'deletion', 'rectification', 'portability', 'objection']
+  }
+];
+
+// Privacy Templates Database
+const PRIVACY_TEMPLATES = [
+  // Social Media Templates
+  {
+    id: 'sm_bio_minimal',
+    name: 'Minimale Bio',
+    category: 'social_media',
+    subcategory: 'bio',
+    description: 'Kurze Bio ohne persönliche Details',
+    privacyScore: 95,
+    popularity: 1250,
+    tags: ['instagram', 'twitter', 'tiktok'],
+    preview: 'Kreativ unterwegs | Kaffee-Enthusiast ☕',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_creative',
+        name: 'Kreativ',
+        content: 'Kreativ unterwegs | {{HOBBY}} {{EMOJI}} | Immer neugierig',
+        tone: 'casual'
+      },
+      {
+        id: 'variant_minimal',
+        name: 'Ultra-Minimal',
+        content: '{{EMOJI}} {{EMOJI}} {{EMOJI}}',
+        tone: 'minimal'
+      },
+      {
+        id: 'variant_mysterious',
+        name: 'Geheimnisvoll',
+        content: 'Manchmal hier, manchmal dort. Meist irgendwo dazwischen.',
+        tone: 'mysterious'
+      },
+      {
+        id: 'variant_interests',
+        name: 'Interessen-fokussiert',
+        content: '{{HOBBY}} | {{HOBBY2}} | {{EMOJI}}',
+        tone: 'casual'
+      }
+    ],
+    customizable: true,
+    placeholders: [
+      {
+        key: '{{HOBBY}}',
+        description: 'Ein Hobby (ohne zu spezifisch zu sein)',
+        examples: ['Musik', 'Kunst', 'Sport', 'Lesen', 'Fotografie', 'Gaming']
+      },
+      {
+        key: '{{HOBBY2}}',
+        description: 'Ein zweites Hobby',
+        examples: ['Reisen', 'Kochen', 'Natur', 'Tech', 'Film']
+      },
+      {
+        key: '{{EMOJI}}',
+        description: 'Ein passendes Emoji',
+        examples: ['🎨', '📚', '🎵', '⚡', '☕', '🌿', '📸']
+      }
+    ],
+    tips: [
+      'Vermeide deinen echten Namen',
+      'Keine Altersangaben oder Geburtsdaten',
+      'Standort nur sehr allgemein (Land, nicht Stadt)',
+      'Arbeitgeber weglassen oder nur Branche nennen'
+    ],
+    doNot: [
+      'Geburtsdatum teilen',
+      'Genauen Wohnort angeben',
+      'Arbeitgeber + Position nennen',
+      'Familienstand erwähnen'
+    ]
+  },
+  {
+    id: 'sm_bio_professional',
+    name: 'Professionelle Bio',
+    category: 'social_media',
+    subcategory: 'bio',
+    description: 'Business-fokussiert ohne Privates',
+    privacyScore: 88,
+    popularity: 890,
+    tags: ['linkedin', 'xing', 'twitter'],
+    preview: 'Marketing | Digital Strategy | Speaker',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_expert',
+        name: 'Experte',
+        content: '{{BRANCHE}} | {{SKILL}} | {{SKILL2}}',
+        tone: 'professional'
+      },
+      {
+        id: 'variant_passion',
+        name: 'Mit Leidenschaft',
+        content: 'Leidenschaftlich für {{BRANCHE}} | {{SKILL}} Enthusiast',
+        tone: 'professional'
+      },
+      {
+        id: 'variant_helping',
+        name: 'Hilfsbereit',
+        content: 'Helfe bei {{SKILL}} | {{BRANCHE}} | Open for connections',
+        tone: 'professional'
+      }
+    ],
+    customizable: true,
+    placeholders: [
+      {
+        key: '{{BRANCHE}}',
+        description: 'Deine Branche (allgemein)',
+        examples: ['Marketing', 'Tech', 'Finance', 'Design', 'Consulting']
+      },
+      {
+        key: '{{SKILL}}',
+        description: 'Eine Fähigkeit',
+        examples: ['Strategy', 'Analytics', 'Leadership', 'Innovation']
+      },
+      {
+        key: '{{SKILL2}}',
+        description: 'Eine weitere Fähigkeit',
+        examples: ['Project Management', 'Team Building', 'Digital Transformation']
+      }
+    ],
+    tips: [
+      'Branche statt spezifischem Arbeitgeber',
+      'Fähigkeiten statt Jobtitel',
+      'Keine Jahreszahlen oder Erfahrungsdauer'
+    ],
+    doNot: [
+      'Aktuellen Arbeitgeber nennen',
+      'Genauen Jobtitel angeben',
+      'Jahrelange Erfahrung mit Zahl nennen'
+    ]
+  },
+  {
+    id: 'sm_bio_dating',
+    name: 'Dating-Profil Bio',
+    category: 'social_media',
+    subcategory: 'bio',
+    description: 'Interessant ohne identifizierbar zu sein',
+    privacyScore: 85,
+    popularity: 720,
+    tags: ['tinder', 'bumble', 'hinge'],
+    preview: 'Suche jemanden für Kaffee und Gespräche ☕',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_casual',
+        name: 'Locker',
+        content: '{{HOBBY}} Enthusiast | Suche jemanden für {{ACTIVITY}} | {{EMOJI}}',
+        tone: 'casual'
+      },
+      {
+        id: 'variant_funny',
+        name: 'Humorvoll',
+        content: 'Profi im {{HOBBY}} (nicht wirklich) | {{EMOJI}} > 🍕',
+        tone: 'funny'
+      },
+      {
+        id: 'variant_genuine',
+        name: 'Authentisch',
+        content: 'Einfach auf der Suche nach echten Gesprächen und {{HOBBY}}',
+        tone: 'genuine'
+      }
+    ],
+    customizable: true,
+    placeholders: [
+      {
+        key: '{{HOBBY}}',
+        description: 'Ein Hobby',
+        examples: ['Wandern', 'Kochen', 'Musik', 'Filme']
+      },
+      {
+        key: '{{ACTIVITY}}',
+        description: 'Eine Aktivität',
+        examples: ['Kaffee', 'Spaziergänge', 'Konzerte', 'Spieleabende']
+      },
+      {
+        key: '{{EMOJI}}',
+        description: 'Ein Emoji',
+        examples: ['☕', '🎵', '🏔️', '🎬']
+      }
+    ],
+    tips: [
+      'Vorname reicht, kein Nachname',
+      'Ungefähre Altersgruppe statt exaktem Alter',
+      'Hobbys statt Beruf in den Vordergrund'
+    ],
+    doNot: [
+      'Arbeitsplatz oder Arbeitgeber nennen',
+      'Genaue Adresse oder Stadtteil',
+      'Voller Name oder Social Media Handles'
+    ]
+  },
+  {
+    id: 'sm_post_travel',
+    name: 'Reise-Post',
+    category: 'social_media',
+    subcategory: 'posts',
+    description: 'Urlaubspost ohne Sicherheitsrisiken',
+    privacyScore: 75,
+    popularity: 650,
+    tags: ['instagram', 'facebook'],
+    preview: 'Schöne Zeit gehabt! 🌴',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_vague',
+        name: 'Vage',
+        content: 'Schöne Zeit gehabt! {{EMOJI}}',
+        tone: 'casual'
+      },
+      {
+        id: 'variant_past',
+        name: 'Vergangenheit',
+        content: 'Throwback zu einer wunderschönen Reise {{EMOJI}}',
+        tone: 'nostalgic'
+      },
+      {
+        id: 'variant_general',
+        name: 'Allgemein',
+        content: 'Manchmal muss man einfach raus. {{EMOJI}}',
+        tone: 'philosophical'
+      }
+    ],
+    customizable: true,
+    placeholders: [
+      {
+        key: '{{EMOJI}}',
+        description: 'Passendes Emoji',
+        examples: ['🌴', '🏔️', '🌊', '✈️', '🌅']
+      }
+    ],
+    tips: [
+      'Poste erst NACH der Reise',
+      'Keine Echtzeit-Standorte',
+      'Allgemeine Beschreibung statt genauer Ort'
+    ],
+    doNot: [
+      'Während du weg bist posten',
+      'Genauen Standort taggen',
+      'Reisedaten verraten',
+      'Hotel oder Unterkunft nennen'
+    ]
+  },
+  // Job Application Templates
+  {
+    id: 'job_cv_summary',
+    name: 'Lebenslauf-Kurzprofil',
+    category: 'job_application',
+    subcategory: 'cv_summary',
+    description: 'Professionelles Profil ohne zu viele Details',
+    privacyScore: 75,
+    popularity: 540,
+    tags: ['cv', 'resume', 'linkedin'],
+    preview: 'Erfahrene Fachkraft im Bereich Marketing mit Schwerpunkt Digital...',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_experienced',
+        name: 'Erfahren',
+        content: 'Erfahrene Fachkraft im Bereich {{BRANCHE}} mit Schwerpunkt {{SKILL}}. Mehrjährige Berufserfahrung in {{REGION}}.',
+        tone: 'professional'
+      },
+      {
+        id: 'variant_results',
+        name: 'Ergebnisorientiert',
+        content: 'Ergebnisorientierter {{BRANCHE}}-Experte mit nachweislichen Erfolgen in {{SKILL}} und {{SKILL2}}.',
+        tone: 'professional'
+      },
+      {
+        id: 'variant_passionate',
+        name: 'Leidenschaftlich',
+        content: 'Leidenschaftlicher {{BRANCHE}}-Spezialist mit Fokus auf {{SKILL}}. Stets auf der Suche nach neuen Herausforderungen.',
+        tone: 'enthusiastic'
+      }
+    ],
+    customizable: true,
+    placeholders: [
+      {
+        key: '{{BRANCHE}}',
+        description: 'Deine Branche',
+        examples: ['Marketing', 'IT', 'Finance', 'HR', 'Sales']
+      },
+      {
+        key: '{{SKILL}}',
+        description: 'Hauptfähigkeit',
+        examples: ['Digital Marketing', 'Projektmanagement', 'Datenanalyse']
+      },
+      {
+        key: '{{SKILL2}}',
+        description: 'Zweite Fähigkeit',
+        examples: ['Teamführung', 'Strategieentwicklung', 'Kundenbetreuung']
+      },
+      {
+        key: '{{REGION}}',
+        description: 'Region (allgemein)',
+        examples: ['DACH-Region', 'Europa', 'Deutschland']
+      }
+    ],
+    tips: [
+      'Vermeide genaue Jahreszahlen',
+      'Nutze "mehrjährig" statt "5 Jahre"',
+      'Region statt Stadt'
+    ],
+    doNot: [
+      'Genaues Alter oder Geburtsjahr',
+      'Frühere Arbeitgeber mit Namen',
+      'Exakte Gehaltsinformationen'
+    ]
+  },
+  {
+    id: 'job_cover_intro',
+    name: 'Anschreiben-Einleitung',
+    category: 'job_application',
+    subcategory: 'cover_letter',
+    description: 'Professioneller Einstieg ohne zu persönlich zu werden',
+    privacyScore: 80,
+    popularity: 420,
+    tags: ['bewerbung', 'anschreiben'],
+    preview: 'Mit großem Interesse habe ich Ihre Stellenausschreibung gelesen...',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_interest',
+        name: 'Interesse',
+        content: 'Mit großem Interesse habe ich Ihre Stellenausschreibung für die Position im Bereich {{BRANCHE}} gelesen. Meine Erfahrung in {{SKILL}} und meine Leidenschaft für {{THEMA}} machen mich zu einem idealen Kandidaten.',
+        tone: 'professional'
+      },
+      {
+        id: 'variant_referral',
+        name: 'Mit Empfehlung',
+        content: 'Auf Empfehlung bewerbe ich mich für die ausgeschriebene Position. Mein Hintergrund in {{BRANCHE}} und meine Expertise in {{SKILL}} passen hervorragend zu Ihren Anforderungen.',
+        tone: 'professional'
+      }
+    ],
+    customizable: true,
+    placeholders: [
+      {
+        key: '{{BRANCHE}}',
+        description: 'Bereich der Stelle',
+        examples: ['Marketing', 'IT', 'Vertrieb']
+      },
+      {
+        key: '{{SKILL}}',
+        description: 'Relevante Fähigkeit',
+        examples: ['Projektmanagement', 'Datenanalyse', 'Kundenbetreuung']
+      },
+      {
+        key: '{{THEMA}}',
+        description: 'Thema/Bereich',
+        examples: ['digitale Transformation', 'Innovation', 'Teamarbeit']
+      }
+    ],
+    tips: [
+      'Keine persönlichen Geschichten im ersten Absatz',
+      'Fokus auf Qualifikationen, nicht Lebensumstände'
+    ],
+    doNot: [
+      'Familienstand erwähnen',
+      'Gesundheitliche Gründe für Wechsel',
+      'Finanzielle Motivation'
+    ]
+  },
+  // Online Forms Templates
+  {
+    id: 'form_registration',
+    name: 'Minimale Registrierung',
+    category: 'online_forms',
+    subcategory: 'registration',
+    description: 'Nur notwendige Angaben für Account-Erstellung',
+    privacyScore: 90,
+    popularity: 380,
+    tags: ['signup', 'registration', 'account'],
+    preview: 'Username statt Realname...',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_username',
+        name: 'Mit Username',
+        content: 'Name: {{USERNAME}}\nE-Mail: {{ALIAS_EMAIL}}',
+        tone: 'minimal'
+      }
+    ],
+    customizable: true,
+    placeholders: [
+      {
+        key: '{{USERNAME}}',
+        description: 'Ein Pseudonym/Username',
+        examples: ['CoffeeExplorer', 'NightOwl42', 'PixelWanderer']
+      },
+      {
+        key: '{{ALIAS_EMAIL}}',
+        description: 'E-Mail mit Alias',
+        examples: ['vorname+servicename@email.de']
+      }
+    ],
+    tips: [
+      'Nutze E-Mail-Aliase (vorname+dienst@email.de)',
+      'Username statt echtem Namen',
+      'Optionale Felder leer lassen'
+    ],
+    doNot: [
+      'Echten vollen Namen angeben',
+      'Haupt-E-Mail-Adresse nutzen',
+      'Optionale Felder ausfüllen'
+    ]
+  },
+  {
+    id: 'form_contact',
+    name: 'Kontaktformular',
+    category: 'online_forms',
+    subcategory: 'contact',
+    description: 'Anfrage ohne zu viel preiszugeben',
+    privacyScore: 85,
+    popularity: 290,
+    tags: ['contact', 'inquiry'],
+    preview: 'Anfrage zu Ihrem Produkt...',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_product',
+        name: 'Produktanfrage',
+        content: 'Betreff: Anfrage zu {{PRODUKT}}\n\nGuten Tag,\n\nich interessiere mich für {{PRODUKT}} und hätte einige Fragen:\n\n{{FRAGE}}\n\nBitte kontaktieren Sie mich per E-Mail.\n\nMit freundlichen Grüßen',
+        tone: 'professional'
+      }
+    ],
+    customizable: true,
+    placeholders: [
+      {
+        key: '{{PRODUKT}}',
+        description: 'Produkt/Service',
+        examples: ['Ihr Softwareprodukt', 'Ihre Dienstleistung']
+      },
+      {
+        key: '{{FRAGE}}',
+        description: 'Deine Frage',
+        examples: ['Gibt es eine Testversion?', 'Welche Funktionen sind enthalten?']
+      }
+    ],
+    tips: [
+      'Nur Vorname oder gar keinen Namen',
+      'Keine Telefonnummer wenn nicht nötig',
+      'E-Mail-Alias verwenden'
+    ],
+    doNot: [
+      'Vollständige Adresse angeben',
+      'Telefonnummer teilen',
+      'Arbeitgeber erwähnen'
+    ]
+  },
+  // Email Response Templates
+  {
+    id: 'email_marketing_optout',
+    name: 'Marketing-Abmeldung',
+    category: 'email_responses',
+    subcategory: 'marketing_optout',
+    description: 'Höfliche Abmeldung von Werbe-E-Mails',
+    privacyScore: 95,
+    popularity: 560,
+    tags: ['marketing', 'newsletter', 'abmeldung'],
+    preview: 'Bitte entfernen Sie mich aus Ihrem Verteiler...',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_polite',
+        name: 'Höflich',
+        content: 'Betreff: Abmeldung vom Newsletter\n\nGuten Tag,\n\nbitte entfernen Sie meine E-Mail-Adresse aus Ihrem Verteiler. Ich möchte keine weiteren Marketing-E-Mails erhalten.\n\nMit freundlichen Grüßen',
+        tone: 'polite'
+      },
+      {
+        id: 'variant_firm',
+        name: 'Bestimmt',
+        content: 'Betreff: Sofortige Abmeldung gefordert\n\nGuten Tag,\n\nich fordere Sie auf, meine E-Mail-Adresse unverzüglich aus allen Verteilern zu entfernen. Dies gilt für sämtliche Marketing- und Werbenachrichten.\n\nIch erwarte eine Bestätigung.',
+        tone: 'firm'
+      }
+    ],
+    customizable: false,
+    placeholders: [],
+    tips: [
+      'Kurz und sachlich bleiben',
+      'Keine Erklärung nötig',
+      'Um Bestätigung bitten'
+    ],
+    doNot: [
+      'Persönliche Gründe nennen',
+      'Sich entschuldigen',
+      'Zusätzliche Informationen geben'
+    ]
+  },
+  {
+    id: 'email_data_request_decline',
+    name: 'Datenanfrage ablehnen',
+    category: 'email_responses',
+    subcategory: 'data_requests',
+    description: 'Höfliche Ablehnung einer Datenanfrage',
+    privacyScore: 92,
+    popularity: 340,
+    tags: ['data', 'request', 'decline'],
+    preview: 'Vielen Dank für Ihre Anfrage, jedoch...',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_polite',
+        name: 'Höflich',
+        content: 'Betreff: Re: Ihre Anfrage\n\nGuten Tag,\n\nvielen Dank für Ihre Anfrage. Leider kann ich die gewünschten Informationen nicht bereitstellen, da diese persönlicher Natur sind.\n\nIch bitte um Verständnis.\n\nMit freundlichen Grüßen',
+        tone: 'polite'
+      },
+      {
+        id: 'variant_firm',
+        name: 'Bestimmt',
+        content: 'Betreff: Re: Ihre Anfrage\n\nGuten Tag,\n\ndie von Ihnen angeforderten Daten kann und werde ich nicht bereitstellen. Bitte sehen Sie von weiteren Anfragen dieser Art ab.\n\nMit freundlichen Grüßen',
+        tone: 'firm'
+      }
+    ],
+    customizable: false,
+    placeholders: [],
+    tips: [
+      'Keine Begründung schuldig',
+      'Kurz und bestimmt'
+    ],
+    doNot: [
+      'Sich rechtfertigen',
+      'Alternative Daten anbieten'
+    ]
+  },
+  {
+    id: 'email_consent_withdrawal',
+    name: 'Einwilligung widerrufen',
+    category: 'email_responses',
+    subcategory: 'consent_withdrawal',
+    description: 'Widerruf einer Datenverarbeitungs-Einwilligung',
+    privacyScore: 98,
+    popularity: 410,
+    tags: ['consent', 'withdrawal', 'gdpr'],
+    preview: 'Hiermit widerrufe ich meine Einwilligung...',
+    privacyAnalysis: {
+      piiCount: 0,
+      locationRevealed: false,
+      ageRevealed: false,
+      employerRevealed: false
+    },
+    variants: [
+      {
+        id: 'variant_formal',
+        name: 'Formell',
+        content: 'Betreff: Widerruf meiner Einwilligung zur Datenverarbeitung\n\nGuten Tag,\n\nhiermit widerrufe ich meine zuvor erteilte Einwilligung zur Verarbeitung meiner personenbezogenen Daten mit sofortiger Wirkung.\n\nDies betrifft insbesondere:\n- {{DATENARTEN}}\n\nBitte bestätigen Sie den Widerruf und die Einstellung der Datenverarbeitung.\n\nMit freundlichen Grüßen',
+        tone: 'formal'
+      }
+    ],
+    customizable: true,
+    placeholders: [
+      {
+        key: '{{DATENARTEN}}',
+        description: 'Welche Daten betroffen sind',
+        examples: ['E-Mail-Adresse für Newsletter', 'Nutzungsdaten für Personalisierung']
+      }
+    ],
+    tips: [
+      'Präzise angeben welche Einwilligung',
+      'Bestätigung anfordern'
+    ],
+    doNot: [
+      'Gründe für den Widerruf nennen',
+      'Sich entschuldigen'
+    ]
+  }
+];
+
+// GDPR Request Templates
+const GDPR_TEMPLATES = {
+  access: {
+    subject: 'Auskunftsanfrage nach Art. 15 DSGVO',
+    body: `Sehr geehrte Damen und Herren,
+
+hiermit mache ich von meinem Auskunftsrecht gemäß Art. 15 DSGVO Gebrauch.
+
+Ich bitte Sie, mir folgende Informationen innerhalb der gesetzlichen Frist von einem Monat mitzuteilen:
+
+1. Ob Sie personenbezogene Daten über mich verarbeiten
+2. Welche Kategorien personenbezogener Daten Sie verarbeiten
+3. Die Verarbeitungszwecke
+4. Die Empfänger oder Kategorien von Empfängern
+5. Die geplante Speicherdauer
+6. Informationen über die Herkunft der Daten
+7. Das Bestehen einer automatisierten Entscheidungsfindung einschließlich Profiling
+
+Bitte übermitteln Sie mir eine Kopie der personenbezogenen Daten in einem gängigen elektronischen Format.
+
+Mit freundlichen Grüßen
+{{NAME}}`,
+    placeholders: [
+      {
+        key: '{{NAME}}',
+        description: 'Dein Name (für formelle Anfragen nötig)'
+      }
+    ],
+    legalBasis: 'Art. 15 DSGVO - Auskunftsrecht der betroffenen Person',
+    responseDeadline: '30 Tage',
+    tips: [
+      'Per E-Mail oder Einschreiben senden',
+      'Kopie aufbewahren',
+      'Frist notieren'
+    ]
+  },
+  deletion: {
+    subject: 'Antrag auf Löschung personenbezogener Daten (Art. 17 DSGVO)',
+    body: `Sehr geehrte Damen und Herren,
+
+hiermit mache ich von meinem Recht auf Löschung gemäß Art. 17 DSGVO Gebrauch.
+
+Ich fordere Sie auf, sämtliche über mich gespeicherten personenbezogenen Daten unverzüglich zu löschen.
+
+Betroffen sind insbesondere:
+{{DATENARTEN}}
+
+Die Löschung ist aus folgendem Grund geboten:
+- Die Daten sind für die Zwecke, für die sie erhoben wurden, nicht mehr notwendig
+- Ich widerrufe meine Einwilligung und es gibt keine andere Rechtsgrundlage
+
+Bitte bestätigen Sie die vollständige Löschung innerhalb der gesetzlichen Frist von einem Monat.
+
+Sollten Sie die Daten an Dritte weitergegeben haben, bitte ich Sie, diese ebenfalls über meinen Löschungsantrag zu informieren.
+
+Mit freundlichen Grüßen
+{{NAME}}`,
+    placeholders: [
+      {
+        key: '{{DATENARTEN}}',
+        description: 'Welche Daten gelöscht werden sollen',
+        examples: ['E-Mail-Adresse', 'Kundenkonto', 'Bestellhistorie', 'Alle gespeicherten Daten']
+      },
+      {
+        key: '{{NAME}}',
+        description: 'Dein Name (für formelle Anfragen nötig)'
+      }
+    ],
+    legalBasis: 'Art. 17 DSGVO - Recht auf Löschung ("Recht auf Vergessenwerden")',
+    responseDeadline: '30 Tage',
+    tips: [
+      'Per Einschreiben senden für Nachweis',
+      'Kopie der Anfrage aufbewahren',
+      'Frist notieren und nachfassen',
+      'Bei Ablehnung: Begründung verlangen'
+    ]
+  },
+  rectification: {
+    subject: 'Antrag auf Berichtigung personenbezogener Daten (Art. 16 DSGVO)',
+    body: `Sehr geehrte Damen und Herren,
+
+hiermit mache ich von meinem Recht auf Berichtigung gemäß Art. 16 DSGVO Gebrauch.
+
+Ich bitte Sie, folgende unrichtige personenbezogene Daten unverzüglich zu berichtigen:
+
+Falsche Daten: {{FALSCHE_DATEN}}
+Korrekte Daten: {{KORREKTE_DATEN}}
+
+Bitte bestätigen Sie die Berichtigung innerhalb der gesetzlichen Frist.
+
+Mit freundlichen Grüßen
+{{NAME}}`,
+    placeholders: [
+      {
+        key: '{{FALSCHE_DATEN}}',
+        description: 'Die falschen Daten',
+        examples: ['Falsche Adresse: Musterstraße 1', 'Falscher Name: Max Muster']
+      },
+      {
+        key: '{{KORREKTE_DATEN}}',
+        description: 'Die korrekten Daten',
+        examples: ['Korrekte Adresse: Beispielweg 2', 'Korrekter Name: Maximilian Muster']
+      },
+      {
+        key: '{{NAME}}',
+        description: 'Dein Name'
+      }
+    ],
+    legalBasis: 'Art. 16 DSGVO - Recht auf Berichtigung',
+    responseDeadline: '30 Tage',
+    tips: [
+      'Konkret angeben was falsch ist',
+      'Nachweis beifügen wenn möglich'
+    ]
+  },
+  portability: {
+    subject: 'Antrag auf Datenübertragbarkeit (Art. 20 DSGVO)',
+    body: `Sehr geehrte Damen und Herren,
+
+hiermit mache ich von meinem Recht auf Datenübertragbarkeit gemäß Art. 20 DSGVO Gebrauch.
+
+Ich bitte Sie, mir die mich betreffenden personenbezogenen Daten, die ich Ihnen bereitgestellt habe, in einem strukturierten, gängigen und maschinenlesbaren Format zu übermitteln.
+
+{{UEBERTRAGUNG}}
+
+Bitte übermitteln Sie die Daten innerhalb der gesetzlichen Frist von einem Monat.
+
+Mit freundlichen Grüßen
+{{NAME}}`,
+    placeholders: [
+      {
+        key: '{{UEBERTRAGUNG}}',
+        description: 'Wohin die Daten übertragen werden sollen',
+        examples: [
+          'Bitte übermitteln Sie die Daten an meine E-Mail-Adresse.',
+          'Bitte übertragen Sie die Daten direkt an [Neuer Anbieter].'
+        ]
+      },
+      {
+        key: '{{NAME}}',
+        description: 'Dein Name'
+      }
+    ],
+    legalBasis: 'Art. 20 DSGVO - Recht auf Datenübertragbarkeit',
+    responseDeadline: '30 Tage',
+    tips: [
+      'Gilt nur für Daten, die du selbst bereitgestellt hast',
+      'Format: CSV, JSON oder XML üblich'
+    ]
+  },
+  objection: {
+    subject: 'Widerspruch gegen Datenverarbeitung (Art. 21 DSGVO)',
+    body: `Sehr geehrte Damen und Herren,
+
+hiermit widerspreche ich gemäß Art. 21 DSGVO der Verarbeitung meiner personenbezogenen Daten.
+
+Der Widerspruch bezieht sich auf:
+{{VERARBEITUNG}}
+
+Gründe für meinen Widerspruch:
+{{GRUENDE}}
+
+Ich fordere Sie auf, die betreffende Verarbeitung unverzüglich einzustellen.
+
+Bitte bestätigen Sie den Erhalt dieses Widerspruchs und die Einstellung der Verarbeitung.
+
+Mit freundlichen Grüßen
+{{NAME}}`,
+    placeholders: [
+      {
+        key: '{{VERARBEITUNG}}',
+        description: 'Welche Verarbeitung',
+        examples: ['Nutzung meiner Daten für Direktwerbung', 'Profiling für personalisierte Werbung']
+      },
+      {
+        key: '{{GRUENDE}}',
+        description: 'Begründung (optional)',
+        examples: ['Ich möchte keine personalisierte Werbung erhalten.', 'Aufgrund meiner besonderen Situation.']
+      },
+      {
+        key: '{{NAME}}',
+        description: 'Dein Name'
+      }
+    ],
+    legalBasis: 'Art. 21 DSGVO - Widerspruchsrecht',
+    responseDeadline: '30 Tage',
+    tips: [
+      'Bei Direktwerbung: Keine Begründung nötig',
+      'Ansonsten: Gründe aus besonderer Situation angeben'
+    ]
+  }
+};
+
+// Template favorites storage (anonymized, in-memory)
+const templateFavorites = new Map();
+
+// Helper: Calculate privacy score for text
+function calculateTemplatePrivacyScore(text, context = 'general') {
+  let score = 100;
+
+  const deductions = {
+    full_name: -25,
+    age_exact: -15,
+    age_decade: -5,
+    city: -20,
+    country: -5,
+    employer_specific: -25,
+    employer_industry: -10,
+    job_title_specific: -15,
+    job_title_general: -5,
+    family_status: -10,
+    phone_number: -30,
+    email: -20,
+    birthdate: -20,
+    address: -30
+  };
+
+  // Check for various PII patterns
+  if (/[A-ZÄÖÜ][a-zäöüß]+\s+[A-ZÄÖÜ][a-zäöüß]+/.test(text)) score += deductions.full_name;
+  if (/\b\d{1,2}\s*(?:Jahre|J\.|years old)\b/i.test(text)) score += deductions.age_exact;
+  if (/\b(?:20er|30er|40er|50er|60er)\b/i.test(text)) score += deductions.age_decade;
+  if (/\b(?:München|Berlin|Hamburg|Frankfurt|Köln|Stuttgart|Düsseldorf|Wien|Zürich)\b/i.test(text)) score += deductions.city;
+  if (/\b(?:arbeite bei|bei der|angestellt bei)\s+[A-ZÄÖÜ][a-zäöüß]+/i.test(text)) score += deductions.employer_specific;
+  if (/\b(?:verheiratet|ledig|geschieden|verwitwet)\b/i.test(text)) score += deductions.family_status;
+  if (/(?:\+49|0049|0)[\s]?(?:\d[\s]?){9,14}/.test(text)) score += deductions.phone_number;
+  if (/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/.test(text)) score += deductions.email;
+  if (/\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b/.test(text)) score += deductions.birthdate;
+  if (/\b[\wäöüßÄÖÜ]+(?:straße|str\.|weg|gasse|platz|allee)\s+\d+/i.test(text)) score += deductions.address;
+
+  return Math.max(0, score);
+}
+
+// Helper: Analyze text and find issues
+function analyzeTextForPrivacy(text, context = 'general') {
+  const issues = [];
+
+  // Name detection
+  const nameMatch = text.match(/\b([A-ZÄÖÜ][a-zäöüß]+(?:\s+[A-ZÄÖÜ][a-zäöüß]+)?)\b/);
+  if (nameMatch && /^[A-ZÄÖÜ][a-zäöüß]+\s+[A-ZÄÖÜ][a-zäöüß]+$/.test(nameMatch[0])) {
+    issues.push({
+      type: 'name',
+      found: nameMatch[0],
+      severity: 'high',
+      suggestion: 'Entferne deinen echten Namen oder nutze einen Spitznamen',
+      deduction: 25
+    });
+  }
+
+  // Age detection
+  const ageMatch = text.match(/\b(\d{1,2})\s*(?:Jahre|J\.|years old|y\/o)?\b/i);
+  if (ageMatch && parseInt(ageMatch[1]) >= 18 && parseInt(ageMatch[1]) <= 99) {
+    if (/\d{1,2}\s*(?:Jahre|J\.|years)/i.test(text)) {
+      issues.push({
+        type: 'age',
+        found: ageMatch[0],
+        severity: 'medium',
+        suggestion: 'Alter weglassen oder nur Dekade angeben (20er)',
+        deduction: 15
+      });
+    }
+  }
+
+  // Location detection
+  const cities = ['München', 'Berlin', 'Hamburg', 'Frankfurt', 'Köln', 'Stuttgart', 'Düsseldorf', 'Wien', 'Zürich', 'Leipzig', 'Dresden', 'Hannover', 'Nürnberg', 'Bremen', 'Dortmund'];
+  for (const city of cities) {
+    if (text.includes(city)) {
+      issues.push({
+        type: 'location',
+        found: city,
+        severity: 'high',
+        suggestion: 'Nur Land oder Region angeben, nicht die Stadt',
+        deduction: 20
+      });
+      break;
+    }
+  }
+
+  // Employer detection
+  const employerMatch = text.match(/(?:arbeite bei|bei der|bei|angestellt bei|tätig bei)\s+([A-ZÄÖÜ][a-zäöüßA-ZÄÖÜ]+)/i);
+  if (employerMatch) {
+    issues.push({
+      type: 'employer',
+      found: employerMatch[1],
+      severity: 'high',
+      suggestion: 'Nur Branche nennen, nicht den Arbeitgeber',
+      deduction: 25
+    });
+  }
+
+  // Phone detection
+  const phoneMatch = text.match(/(?:\+49|0049|0)[\s]?(?:\d[\s]?){9,14}/);
+  if (phoneMatch) {
+    issues.push({
+      type: 'phone',
+      found: phoneMatch[0],
+      severity: 'critical',
+      suggestion: 'Telefonnummer entfernen',
+      deduction: 30
+    });
+  }
+
+  // Email detection
+  const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+  if (emailMatch) {
+    issues.push({
+      type: 'email',
+      found: emailMatch[0],
+      severity: 'high',
+      suggestion: 'E-Mail-Adresse entfernen oder Alias verwenden',
+      deduction: 20
+    });
+  }
+
+  // Birthdate detection
+  const birthdateMatch = text.match(/\b(\d{1,2}[./-]\d{1,2}[./-]\d{2,4})\b/);
+  if (birthdateMatch) {
+    issues.push({
+      type: 'birthdate',
+      found: birthdateMatch[0],
+      severity: 'high',
+      suggestion: 'Geburtsdatum entfernen',
+      deduction: 20
+    });
+  }
+
+  // Address detection
+  const addressMatch = text.match(/[\wäöüßÄÖÜ]+(?:straße|str\.|weg|gasse|platz|allee)\s+\d+[a-z]?/i);
+  if (addressMatch) {
+    issues.push({
+      type: 'address',
+      found: addressMatch[0],
+      severity: 'critical',
+      suggestion: 'Adresse entfernen',
+      deduction: 30
+    });
+  }
+
+  return issues;
+}
+
+// Helper: Generate improved version of text
+function generateImprovedText(text, issues) {
+  let improved = text;
+
+  for (const issue of issues) {
+    switch (issue.type) {
+      case 'name':
+        // Replace with just first letter
+        const nameParts = issue.found.split(' ');
+        if (nameParts.length > 1) {
+          improved = improved.replace(issue.found, nameParts[0].charAt(0) + '.');
+        }
+        break;
+      case 'age':
+        // Remove age
+        improved = improved.replace(new RegExp(issue.found.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ',?\\s*', 'gi'), '');
+        break;
+      case 'location':
+        // Replace with region
+        const regionMap = {
+          'München': 'Bayern',
+          'Berlin': 'Deutschland',
+          'Hamburg': 'Norddeutschland',
+          'Frankfurt': 'Hessen',
+          'Köln': 'NRW',
+          'Stuttgart': 'Baden-Württemberg',
+          'Wien': 'Österreich',
+          'Zürich': 'Schweiz'
+        };
+        improved = improved.replace(issue.found, regionMap[issue.found] || 'Deutschland');
+        break;
+      case 'employer':
+        // Replace with industry
+        improved = improved.replace(new RegExp(`(?:bei|bei der)\\s+${issue.found}`, 'gi'), 'in der Branche');
+        break;
+      case 'phone':
+      case 'email':
+      case 'birthdate':
+      case 'address':
+        // Remove entirely
+        improved = improved.replace(issue.found, '').replace(/\s{2,}/g, ' ');
+        break;
+    }
+  }
+
+  // Clean up
+  improved = improved.replace(/\s+/g, ' ').replace(/\s+([.,])/g, '$1').trim();
+
+  return improved;
+}
+
+// Helper: Get privacy grade from score
+function getPrivacyGrade(score) {
+  if (score >= 90) return 'A';
+  if (score >= 80) return 'B';
+  if (score >= 70) return 'C';
+  if (score >= 60) return 'D';
+  return 'F';
+}
+
 // GPT prompt for semantic analysis (API v2)
 const ANALYZE_V2_SYSTEM_PROMPT = `Du bist ein Datenschutz-Experte. Analysiere den Text auf sensible Daten.
 Du sollst NUR semantische Kategorien erkennen, die nicht durch einfache Muster erkennbar sind.
@@ -3421,8 +4480,8 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '10.0.0',
-    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint', 'privacyCoach'],
+    version: '11.0.0',
+    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint', 'privacyCoach', 'privacyTemplates'],
     languages: SUPPORTED_LANGUAGES,
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
@@ -3437,7 +4496,10 @@ app.get('/', (req, res) => {
         '/api/v2/footprint/social-platforms',
         '/api/v2/coach/chat', '/api/v2/coach/explain', '/api/v2/coach/analyze-risk',
         '/api/v2/coach/topics', '/api/v2/coach/topic/:id', '/api/v2/coach/session',
-        '/api/v2/coach/feedback', '/api/v2/coach/quick-tips'
+        '/api/v2/coach/feedback', '/api/v2/coach/quick-tips',
+        '/api/v2/templates/categories', '/api/v2/templates/category/:id', '/api/v2/templates/:id',
+        '/api/v2/templates/customize', '/api/v2/templates/analyze', '/api/v2/templates/gdpr/:type',
+        '/api/v2/templates/favorite', '/api/v2/templates/favorites', '/api/v2/templates/search'
       ]
     }
   });
@@ -4369,7 +5431,7 @@ app.get('/api/v2/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '10.0.0',
+    version: '11.0.0',
     timestamp: new Date().toISOString(),
     providers: {
       openai: {
@@ -4424,6 +5486,13 @@ app.get('/api/v2/health', (req, res) => {
       activeSessions: coachSessions.size,
       features: ['chat', 'explain', 'analyzeRisk', 'topics', 'sessions', 'feedback', 'quickTips']
     },
+    privacyTemplates: {
+      enabled: true,
+      categories: TEMPLATE_CATEGORIES.length,
+      templates: PRIVACY_TEMPLATES.length,
+      gdprRequestTypes: Object.keys(GDPR_TEMPLATES).length,
+      features: ['categories', 'templates', 'customize', 'analyze', 'gdprRequests', 'favorites', 'search']
+    },
     pwa: {
       offlinePatternsEndpoint: '/api/v2/patterns/offline',
       pingEndpoint: '/api/v2/ping'
@@ -4436,7 +5505,9 @@ app.get('/api/v2/health', (req, res) => {
       breachCheck: '20/min (recommended)',
       coachChat: '30/min (recommended)',
       coachExplain: '20/min (recommended)',
-      coachAnalyzeRisk: '10/min (recommended)'
+      coachAnalyzeRisk: '10/min (recommended)',
+      templatesCustomize: '30/min (recommended)',
+      templatesAnalyze: '20/min (recommended)'
     },
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
@@ -4456,6 +5527,11 @@ app.get('/api/v2/health', (req, res) => {
         '/api/v2/coach/chat', '/api/v2/coach/explain', '/api/v2/coach/analyze-risk',
         '/api/v2/coach/topics', '/api/v2/coach/topic/:id', '/api/v2/coach/session',
         '/api/v2/coach/feedback', '/api/v2/coach/quick-tips'
+      ],
+      templates: [
+        '/api/v2/templates/categories', '/api/v2/templates/category/:id', '/api/v2/templates/:id',
+        '/api/v2/templates/customize', '/api/v2/templates/analyze', '/api/v2/templates/gdpr/:type',
+        '/api/v2/templates/favorite', '/api/v2/templates/favorites', '/api/v2/templates/search'
       ]
     }
   });
@@ -4541,7 +5617,7 @@ app.get('/api/v2/patterns/offline', (req, res) => {
   }
 
   res.json({
-    version: '10.0.0',
+    version: '11.0.0',
     lang,
     lastUpdated: new Date().toISOString(),
     patterns,
@@ -6440,6 +7516,386 @@ app.get('/api/v2/coach/quick-tips', (req, res) => {
       reward: dailyChallenge.reward,
       difficulty: dailyChallenge.difficulty
     }
+  });
+});
+
+// ===========================================
+// API v2 - Phase 11 Endpoints (Privacy Templates)
+// ===========================================
+
+// GET /api/v2/templates/categories - List all template categories
+app.get('/api/v2/templates/categories', (req, res) => {
+  const categories = TEMPLATE_CATEGORIES.map(cat => {
+    const templateCount = PRIVACY_TEMPLATES.filter(t => t.category === cat.id).length;
+    return {
+      id: cat.id,
+      name: cat.name,
+      icon: cat.icon,
+      description: cat.description,
+      templateCount
+    };
+  });
+
+  res.json({
+    success: true,
+    categories
+  });
+});
+
+// GET /api/v2/templates/category/:categoryId - List templates in a category
+app.get('/api/v2/templates/category/:categoryId', (req, res) => {
+  const { categoryId } = req.params;
+  const { subcategory, tag, sort = 'popularity' } = req.query;
+
+  const category = TEMPLATE_CATEGORIES.find(c => c.id === categoryId);
+  if (!category) {
+    return res.status(404).json({
+      error: 'Kategorie nicht gefunden',
+      availableCategories: TEMPLATE_CATEGORIES.map(c => c.id)
+    });
+  }
+
+  let templates = PRIVACY_TEMPLATES.filter(t => t.category === categoryId);
+
+  // Filter by subcategory
+  if (subcategory) {
+    templates = templates.filter(t => t.subcategory === subcategory);
+  }
+
+  // Filter by tag
+  if (tag) {
+    templates = templates.filter(t => t.tags.includes(tag.toLowerCase()));
+  }
+
+  // Sort
+  if (sort === 'popularity') {
+    templates.sort((a, b) => b.popularity - a.popularity);
+  } else if (sort === 'privacyScore') {
+    templates.sort((a, b) => b.privacyScore - a.privacyScore);
+  } else if (sort === 'name') {
+    templates.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  res.json({
+    success: true,
+    category: {
+      id: category.id,
+      name: category.name,
+      icon: category.icon,
+      subcategories: category.subcategories
+    },
+    templates: templates.map(t => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      privacyScore: t.privacyScore,
+      popularity: t.popularity,
+      tags: t.tags,
+      preview: t.preview,
+      subcategory: t.subcategory
+    }))
+  });
+});
+
+// GET /api/v2/templates/:templateId - Get specific template with variants
+app.get('/api/v2/templates/:templateId', (req, res) => {
+  const { templateId } = req.params;
+
+  const template = PRIVACY_TEMPLATES.find(t => t.id === templateId);
+  if (!template) {
+    return res.status(404).json({
+      error: 'Template nicht gefunden',
+      availableTemplates: PRIVACY_TEMPLATES.map(t => t.id)
+    });
+  }
+
+  res.json({
+    success: true,
+    template: {
+      id: template.id,
+      name: template.name,
+      category: template.category,
+      subcategory: template.subcategory,
+      description: template.description,
+      privacyScore: template.privacyScore,
+      privacyAnalysis: template.privacyAnalysis,
+      variants: template.variants,
+      customizable: template.customizable,
+      placeholders: template.placeholders,
+      tips: template.tips,
+      doNot: template.doNot
+    }
+  });
+});
+
+// POST /api/v2/templates/customize - Customize a template with user inputs
+app.post('/api/v2/templates/customize', (req, res) => {
+  const { templateId, variantId, customizations = {} } = req.body;
+
+  if (!templateId) {
+    return res.status(400).json({
+      error: 'Template ID erforderlich'
+    });
+  }
+
+  const template = PRIVACY_TEMPLATES.find(t => t.id === templateId);
+  if (!template) {
+    return res.status(404).json({
+      error: 'Template nicht gefunden'
+    });
+  }
+
+  // Find variant or use first one
+  let variant = template.variants[0];
+  if (variantId) {
+    const found = template.variants.find(v => v.id === variantId);
+    if (found) variant = found;
+  }
+
+  // Apply customizations
+  let content = variant.content;
+  for (const [key, value] of Object.entries(customizations)) {
+    content = content.replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
+  }
+
+  // Calculate privacy score of customized content
+  const privacyScore = calculateTemplatePrivacyScore(content);
+
+  // Check for privacy warnings
+  const privacyWarnings = [];
+  const issues = analyzeTextForPrivacy(content);
+  for (const issue of issues) {
+    privacyWarnings.push({
+      type: issue.type,
+      found: issue.found,
+      warning: issue.suggestion
+    });
+  }
+
+  // Check if still has unfilled placeholders
+  const hasUnfilledPlaceholders = /\{\{[A-Z_]+\}\}/.test(content);
+
+  res.json({
+    success: true,
+    result: {
+      content,
+      privacyScore,
+      privacyWarnings,
+      copyReady: !hasUnfilledPlaceholders && privacyWarnings.length === 0,
+      hasUnfilledPlaceholders
+    }
+  });
+});
+
+// POST /api/v2/templates/analyze - Analyze user text and suggest improvements
+app.post('/api/v2/templates/analyze', (req, res) => {
+  const { text, context = 'general' } = req.body;
+
+  if (!text) {
+    return res.status(400).json({
+      error: 'Text erforderlich'
+    });
+  }
+
+  // Calculate privacy score
+  const privacyScore = calculateTemplatePrivacyScore(text, context);
+  const grade = getPrivacyGrade(privacyScore);
+
+  // Find issues
+  const issues = analyzeTextForPrivacy(text, context);
+
+  // Generate improved version
+  const suggestedVersion = generateImprovedText(text, issues);
+  const improvedScore = calculateTemplatePrivacyScore(suggestedVersion, context);
+
+  res.json({
+    success: true,
+    analysis: {
+      privacyScore,
+      grade,
+      issues: issues.map(issue => ({
+        type: issue.type,
+        found: issue.found,
+        severity: issue.severity,
+        suggestion: issue.suggestion
+      })),
+      suggestedVersion,
+      improvedScore
+    }
+  });
+});
+
+// GET /api/v2/templates/gdpr/:requestType - Get GDPR request templates
+app.get('/api/v2/templates/gdpr/:requestType', (req, res) => {
+  const { requestType } = req.params;
+
+  const validTypes = Object.keys(GDPR_TEMPLATES);
+  if (!validTypes.includes(requestType)) {
+    return res.status(404).json({
+      error: 'Anfragetyp nicht gefunden',
+      validTypes,
+      typeDescriptions: {
+        access: 'Auskunftsanfrage - Welche Daten werden gespeichert?',
+        deletion: 'Löschungsantrag - Daten löschen lassen',
+        rectification: 'Berichtigungsantrag - Falsche Daten korrigieren',
+        portability: 'Datenübertragung - Daten in lesbarem Format erhalten',
+        objection: 'Widerspruch - Datenverarbeitung widersprechen'
+      }
+    });
+  }
+
+  const template = GDPR_TEMPLATES[requestType];
+
+  res.json({
+    success: true,
+    requestType,
+    template: {
+      subject: template.subject,
+      body: template.body,
+      placeholders: template.placeholders,
+      legalBasis: template.legalBasis,
+      responseDeadline: template.responseDeadline,
+      tips: template.tips
+    }
+  });
+});
+
+// POST /api/v2/templates/favorite - Save template as favorite (anonymized)
+app.post('/api/v2/templates/favorite', (req, res) => {
+  const { templateId, sessionId, action = 'add' } = req.body;
+
+  if (!templateId) {
+    return res.status(400).json({
+      error: 'Template ID erforderlich'
+    });
+  }
+
+  const template = PRIVACY_TEMPLATES.find(t => t.id === templateId);
+  if (!template) {
+    return res.status(404).json({
+      error: 'Template nicht gefunden'
+    });
+  }
+
+  // Use anonymous session tracking
+  const anonSession = sessionId || 'anon_' + Date.now().toString(36);
+
+  if (!templateFavorites.has(anonSession)) {
+    templateFavorites.set(anonSession, new Set());
+  }
+
+  const favorites = templateFavorites.get(anonSession);
+
+  if (action === 'remove') {
+    favorites.delete(templateId);
+    return res.json({
+      success: true,
+      message: 'Template aus Favoriten entfernt',
+      sessionId: anonSession,
+      favoriteCount: favorites.size
+    });
+  }
+
+  favorites.add(templateId);
+
+  // Limit favorites per session
+  if (favorites.size > 50) {
+    const oldest = favorites.values().next().value;
+    favorites.delete(oldest);
+  }
+
+  // Update popularity (anonymized)
+  template.popularity = (template.popularity || 0) + 1;
+
+  res.json({
+    success: true,
+    message: 'Template zu Favoriten hinzugefügt',
+    sessionId: anonSession,
+    favoriteCount: favorites.size
+  });
+});
+
+// GET /api/v2/templates/favorites - Get favorites for a session
+app.get('/api/v2/templates/favorites', (req, res) => {
+  const { sessionId } = req.query;
+
+  if (!sessionId || !templateFavorites.has(sessionId)) {
+    return res.json({
+      success: true,
+      favorites: []
+    });
+  }
+
+  const favoriteIds = Array.from(templateFavorites.get(sessionId));
+  const favorites = favoriteIds
+    .map(id => PRIVACY_TEMPLATES.find(t => t.id === id))
+    .filter(Boolean)
+    .map(t => ({
+      id: t.id,
+      name: t.name,
+      category: t.category,
+      description: t.description,
+      privacyScore: t.privacyScore,
+      preview: t.preview
+    }));
+
+  res.json({
+    success: true,
+    favorites
+  });
+});
+
+// GET /api/v2/templates/search - Search templates
+app.get('/api/v2/templates/search', (req, res) => {
+  const { q, category, minScore, maxResults = 10 } = req.query;
+
+  if (!q || q.length < 2) {
+    return res.status(400).json({
+      error: 'Suchbegriff muss mindestens 2 Zeichen haben'
+    });
+  }
+
+  const query = q.toLowerCase();
+  let results = PRIVACY_TEMPLATES.filter(t => {
+    const searchable = `${t.name} ${t.description} ${t.tags.join(' ')} ${t.preview}`.toLowerCase();
+    return searchable.includes(query);
+  });
+
+  // Filter by category
+  if (category) {
+    results = results.filter(t => t.category === category);
+  }
+
+  // Filter by minimum privacy score
+  if (minScore) {
+    const minScoreNum = parseInt(minScore);
+    results = results.filter(t => t.privacyScore >= minScoreNum);
+  }
+
+  // Sort by relevance (name match first, then popularity)
+  results.sort((a, b) => {
+    const aNameMatch = a.name.toLowerCase().includes(query) ? 1 : 0;
+    const bNameMatch = b.name.toLowerCase().includes(query) ? 1 : 0;
+    if (aNameMatch !== bNameMatch) return bNameMatch - aNameMatch;
+    return b.popularity - a.popularity;
+  });
+
+  // Limit results
+  results = results.slice(0, parseInt(maxResults));
+
+  res.json({
+    success: true,
+    query: q,
+    resultCount: results.length,
+    results: results.map(t => ({
+      id: t.id,
+      name: t.name,
+      category: t.category,
+      description: t.description,
+      privacyScore: t.privacyScore,
+      tags: t.tags,
+      preview: t.preview
+    }))
   });
 });
 
