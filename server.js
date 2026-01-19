@@ -3366,6 +3366,591 @@ function generateCoachResponse(message, context, userProfile) {
 }
 
 // ===========================================
+// Phase 9: Data Breach Alerts
+// ===========================================
+
+// In-memory storage for alert subscriptions
+const alertSubscriptions = new Map(); // email -> subscription data
+const verificationTokens = new Map(); // token -> { email, expires, type }
+const alertHistory = new Map(); // email -> [{ breachId, notifiedAt, ... }]
+
+// Alert subscription preferences
+const DEFAULT_ALERT_PREFERENCES = {
+  emailNotifications: true,
+  pushNotifications: false,
+  immediateAlerts: true,
+  weeklyDigest: false,
+  severityThreshold: 'medium', // low, medium, high, critical
+  categories: ['all'], // all, financial, social, email, gaming, shopping
+  language: 'de'
+};
+
+// Breach severity levels for alerts
+const BREACH_SEVERITY = {
+  critical: { level: 4, label: 'Kritisch', description: 'Passwörter, Finanzdaten oder Identitätsdaten betroffen' },
+  high: { level: 3, label: 'Hoch', description: 'Persönliche Daten und E-Mails betroffen' },
+  medium: { level: 2, label: 'Mittel', description: 'Benutzerdaten ohne sensible Informationen' },
+  low: { level: 1, label: 'Niedrig', description: 'Öffentlich zugängliche Daten' }
+};
+
+// Helper: Generate secure verification token
+function generateVerificationToken() {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  let token = '';
+  for (let i = 0; i < 32; i++) {
+    token += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return token;
+}
+
+// Helper: Calculate breach severity based on data types
+function calculateBreachSeverity(dataTypes) {
+  if (!dataTypes || dataTypes.length === 0) return 'low';
+
+  const criticalTypes = ['passwords', 'credit_cards', 'bank_accounts', 'ssn', 'tax_id'];
+  const highTypes = ['email', 'phone', 'address', 'dob', 'ip_address'];
+  const mediumTypes = ['username', 'name', 'gender', 'job_title'];
+
+  if (dataTypes.some(t => criticalTypes.includes(t.toLowerCase()))) return 'critical';
+  if (dataTypes.some(t => highTypes.includes(t.toLowerCase()))) return 'high';
+  if (dataTypes.some(t => mediumTypes.includes(t.toLowerCase()))) return 'medium';
+  return 'low';
+}
+
+// Helper: Check if email matches breach
+function emailMatchesBreach(email, breach) {
+  // Simplified check - in production, this would check against actual breach data
+  const emailDomain = email.split('@')[1]?.toLowerCase();
+  const breachDomain = breach.domain?.toLowerCase();
+
+  // Check if email domain matches breach domain or related services
+  if (emailDomain === breachDomain) return true;
+
+  // Check categories that might use this email
+  const commonEmailServices = ['gmail.com', 'yahoo.com', 'outlook.com', 'gmx.de', 'web.de', 'hotmail.com'];
+  if (commonEmailServices.includes(emailDomain)) {
+    // For common email providers, user might be affected by any breach
+    return true;
+  }
+
+  return false;
+}
+
+// Helper: Get relevant breaches for email
+function getRelevantBreaches(email, preferences = {}) {
+  const severityLevel = BREACH_SEVERITY[preferences.severityThreshold || 'medium']?.level || 2;
+
+  return BREACH_DATABASE
+    .filter(breach => {
+      // Filter by severity threshold
+      const breachSeverity = calculateBreachSeverity(breach.dataTypes);
+      if (BREACH_SEVERITY[breachSeverity].level < severityLevel) return false;
+
+      // Filter by categories if specified
+      if (preferences.categories && !preferences.categories.includes('all')) {
+        if (!preferences.categories.includes(breach.category)) return false;
+      }
+
+      return true;
+    })
+    .map(breach => ({
+      ...breach,
+      severity: calculateBreachSeverity(breach.dataTypes),
+      severityInfo: BREACH_SEVERITY[calculateBreachSeverity(breach.dataTypes)],
+      potentialRisk: emailMatchesBreach(email, breach)
+    }));
+}
+
+// Helper: Format breach notification
+function formatBreachNotification(breach, language = 'de') {
+  const severity = calculateBreachSeverity(breach.dataTypes);
+  const severityInfo = BREACH_SEVERITY[severity];
+
+  if (language === 'de') {
+    return {
+      title: `Datenleck bei ${breach.name}`,
+      severity: severityInfo.label,
+      message: `${breach.name} hat ein Datenleck gemeldet. ${breach.compromisedAccounts?.toLocaleString('de-DE')} Konten sind betroffen.`,
+      dataTypes: breach.dataTypes,
+      recommendations: [
+        'Passwort sofort ändern',
+        'Zwei-Faktor-Authentifizierung aktivieren',
+        'Auf verdächtige Aktivitäten achten'
+      ],
+      date: breach.date,
+      source: breach.source || 'Have I Been Pwned'
+    };
+  }
+
+  return {
+    title: `Data breach at ${breach.name}`,
+    severity: severityInfo.label,
+    message: `${breach.name} reported a data breach. ${breach.compromisedAccounts?.toLocaleString('en-US')} accounts affected.`,
+    dataTypes: breach.dataTypes,
+    recommendations: [
+      'Change password immediately',
+      'Enable two-factor authentication',
+      'Watch for suspicious activity'
+    ],
+    date: breach.date,
+    source: breach.source || 'Have I Been Pwned'
+  };
+}
+
+// ===========================================
+// Phase 13: Privacy Policy Analyzer
+// ===========================================
+
+// Known services with pre-analyzed privacy policies
+const KNOWN_PRIVACY_SERVICES = {
+  'google.com': {
+    name: 'Google',
+    category: 'tech',
+    privacyScore: 45,
+    grade: 'D',
+    lastAnalyzed: '2024-12-01',
+    dataCollection: ['Suchverlauf', 'Standort', 'Geräteinformationen', 'Werbe-ID', 'E-Mail-Inhalte'],
+    dataSelling: 'Indirekt (Werbepartner)',
+    dataRetention: 'Unbegrenzt (anpassbar)',
+    gdprCompliant: true,
+    deleteOption: true,
+    exportOption: true,
+    concerns: ['Umfangreiche Profilbildung', 'Tracking über Dienste hinweg', 'Lange Speicherfristen'],
+    positives: ['DSGVO-konform', 'Datenexport möglich', 'Löschoption vorhanden']
+  },
+  'facebook.com': {
+    name: 'Facebook/Meta',
+    category: 'social',
+    privacyScore: 35,
+    grade: 'F',
+    lastAnalyzed: '2024-11-15',
+    dataCollection: ['Profilinformationen', 'Aktivitäten', 'Standort', 'Kontakte', 'Gesichtserkennung'],
+    dataSelling: 'Indirekt (Werbepartner)',
+    dataRetention: 'Unbegrenzt',
+    gdprCompliant: true,
+    deleteOption: true,
+    exportOption: true,
+    concerns: ['Sehr umfangreiche Datensammlung', 'Tracking außerhalb der Plattform', 'Datenweitergabe an Dritte'],
+    positives: ['Löschoption', 'Datenexport']
+  },
+  'amazon.com': {
+    name: 'Amazon',
+    category: 'shopping',
+    privacyScore: 50,
+    grade: 'D',
+    lastAnalyzed: '2024-11-20',
+    dataCollection: ['Kaufhistorie', 'Suchanfragen', 'Alexa-Aufnahmen', 'Zahlungsinformationen'],
+    dataSelling: 'Nein (aber Werbung)',
+    dataRetention: 'Bis zur Löschung',
+    gdprCompliant: true,
+    deleteOption: true,
+    exportOption: true,
+    concerns: ['Umfassende Kaufprofile', 'Alexa-Sprachaufnahmen', 'Verhaltensanalyse'],
+    positives: ['Keine direkte Datenweitergabe', 'Löschoption']
+  },
+  'apple.com': {
+    name: 'Apple',
+    category: 'tech',
+    privacyScore: 75,
+    grade: 'B',
+    lastAnalyzed: '2024-12-05',
+    dataCollection: ['Geräteinformationen', 'App-Nutzung', 'iCloud-Daten'],
+    dataSelling: 'Nein',
+    dataRetention: 'Variabel (nutzergesteuert)',
+    gdprCompliant: true,
+    deleteOption: true,
+    exportOption: true,
+    concerns: ['iCloud-Zugriff durch Apple möglich', 'App-Tracking (opt-out verfügbar)'],
+    positives: ['Starker Datenschutz-Fokus', 'On-Device-Verarbeitung', 'Keine Datenweitergabe']
+  },
+  'microsoft.com': {
+    name: 'Microsoft',
+    category: 'tech',
+    privacyScore: 55,
+    grade: 'C',
+    lastAnalyzed: '2024-11-25',
+    dataCollection: ['Nutzungsdaten', 'Suchverlauf', 'Cortana-Interaktionen', 'Dokumentinhalte'],
+    dataSelling: 'Nein (aber Werbung)',
+    dataRetention: 'Variabel',
+    gdprCompliant: true,
+    deleteOption: true,
+    exportOption: true,
+    concerns: ['Telemetrie in Windows', 'Bing-Suche integriert', 'Cloud-Synchronisation'],
+    positives: ['DSGVO-konform', 'Datenschutz-Dashboard']
+  },
+  'tiktok.com': {
+    name: 'TikTok',
+    category: 'social',
+    privacyScore: 25,
+    grade: 'F',
+    lastAnalyzed: '2024-12-01',
+    dataCollection: ['Video-Interaktionen', 'Gerätedaten', 'Standort', 'Gesichtserkennung', 'Tastatureingaben'],
+    dataSelling: 'Unklar (Partner)',
+    dataRetention: 'Unklar',
+    gdprCompliant: true,
+    deleteOption: true,
+    exportOption: true,
+    concerns: ['Sehr umfangreiche Datensammlung', 'Unklare Datenweitergabe', 'Biometrische Daten'],
+    positives: ['Kontolöschung möglich']
+  },
+  'whatsapp.com': {
+    name: 'WhatsApp',
+    category: 'messaging',
+    privacyScore: 55,
+    grade: 'C',
+    lastAnalyzed: '2024-11-30',
+    dataCollection: ['Kontakte', 'Metadaten', 'Standort', 'Geräteinformationen'],
+    dataSelling: 'Meta-Ökosystem',
+    dataRetention: 'Bis Löschung',
+    gdprCompliant: true,
+    deleteOption: true,
+    exportOption: true,
+    concerns: ['Metadaten-Analyse', 'Datenaustausch mit Meta', 'Kontaktzugriff erforderlich'],
+    positives: ['Ende-zu-Ende-Verschlüsselung', 'Nachrichten werden nicht gelesen']
+  },
+  'signal.org': {
+    name: 'Signal',
+    category: 'messaging',
+    privacyScore: 95,
+    grade: 'A',
+    lastAnalyzed: '2024-12-01',
+    dataCollection: ['Telefonnummer (zur Registrierung)'],
+    dataSelling: 'Nein',
+    dataRetention: 'Minimal',
+    gdprCompliant: true,
+    deleteOption: true,
+    exportOption: false,
+    concerns: ['Telefonnummer erforderlich'],
+    positives: ['Minimale Datensammlung', 'Open Source', 'Keine Werbung', 'Starke Verschlüsselung']
+  },
+  'protonmail.com': {
+    name: 'ProtonMail',
+    category: 'email',
+    privacyScore: 90,
+    grade: 'A',
+    lastAnalyzed: '2024-12-01',
+    dataCollection: ['E-Mail-Adresse', 'Zahlungsinformationen (optional)'],
+    dataSelling: 'Nein',
+    dataRetention: 'Nutzergesteuert',
+    gdprCompliant: true,
+    deleteOption: true,
+    exportOption: true,
+    concerns: ['Schweizer Recht (kann anders sein)'],
+    positives: ['Zero-Access-Verschlüsselung', 'Keine Werbung', 'Open Source', 'Anonyme Registrierung möglich']
+  },
+  'spotify.com': {
+    name: 'Spotify',
+    category: 'entertainment',
+    privacyScore: 50,
+    grade: 'D',
+    lastAnalyzed: '2024-11-28',
+    dataCollection: ['Hörverhalten', 'Playlists', 'Standort', 'Geräteinformationen'],
+    dataSelling: 'Partner (Werbung)',
+    dataRetention: 'Während Nutzung',
+    gdprCompliant: true,
+    deleteOption: true,
+    exportOption: true,
+    concerns: ['Detaillierte Verhaltensanalyse', 'Werbepartner erhalten Daten'],
+    positives: ['Datenexport', 'DSGVO-konform']
+  }
+};
+
+// Privacy policy analysis patterns (German and English)
+const PRIVACY_POLICY_PATTERNS = {
+  dataCollection: {
+    high: [
+      /sammeln wir.*personenbezogene/gi,
+      /collect.*personal data/gi,
+      /erfassen.*standort/gi,
+      /location data/gi,
+      /biometrische daten/gi,
+      /biometric data/gi,
+      /gesichtserkennung/gi,
+      /face recognition/gi
+    ],
+    medium: [
+      /nutzungsdaten/gi,
+      /usage data/gi,
+      /geräteinformationen/gi,
+      /device information/gi,
+      /cookies/gi
+    ],
+    low: [
+      /anonymisierte daten/gi,
+      /anonymized data/gi,
+      /aggregierte daten/gi,
+      /aggregate data/gi
+    ]
+  },
+  dataSelling: {
+    critical: [
+      /verkaufen.*daten/gi,
+      /sell.*data/gi,
+      /teilen.*werbepartner/gi,
+      /share.*advertising partner/gi,
+      /daten.*monetarisier/gi
+    ],
+    warning: [
+      /drittanbieter/gi,
+      /third party/gi,
+      /partner.*erhalten/gi,
+      /partners.*receive/gi
+    ]
+  },
+  userRights: {
+    positive: [
+      /recht auf löschung/gi,
+      /right to delete/gi,
+      /datenportabilität/gi,
+      /data portability/gi,
+      /widerspruchsrecht/gi,
+      /right to object/gi,
+      /auskunftsrecht/gi,
+      /right to access/gi
+    ]
+  },
+  retention: {
+    concerning: [
+      /unbegrenzt/gi,
+      /indefinitely/gi,
+      /solange.*erforderlich/gi,
+      /as long as.*necessary/gi
+    ],
+    positive: [
+      /automatisch gelöscht/gi,
+      /automatically deleted/gi,
+      /nach.*tagen/gi,
+      /after.*days/gi,
+      /nach.*monaten/gi
+    ]
+  },
+  security: {
+    positive: [
+      /verschlüssel/gi,
+      /encrypt/gi,
+      /ssl|tls|https/gi,
+      /zwei-faktor|2fa|mfa/gi
+    ]
+  }
+};
+
+// Helper: Analyze privacy policy text
+function analyzePrivacyPolicy(text, url = null) {
+  const results = {
+    url,
+    analyzedAt: new Date().toISOString(),
+    textLength: text.length,
+    findings: [],
+    scores: {
+      dataCollection: 100,
+      dataSelling: 100,
+      userRights: 0,
+      retention: 50,
+      security: 50
+    },
+    overallScore: 0,
+    grade: 'F'
+  };
+
+  // Analyze data collection
+  let dataCollectionConcerns = 0;
+  PRIVACY_POLICY_PATTERNS.dataCollection.high.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      dataCollectionConcerns += matches.length * 15;
+      results.findings.push({
+        category: 'dataCollection',
+        severity: 'high',
+        pattern: pattern.toString(),
+        count: matches.length,
+        message: 'Umfangreiche Datensammlung erkannt'
+      });
+    }
+  });
+  PRIVACY_POLICY_PATTERNS.dataCollection.medium.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      dataCollectionConcerns += matches.length * 5;
+      results.findings.push({
+        category: 'dataCollection',
+        severity: 'medium',
+        pattern: pattern.toString(),
+        count: matches.length,
+        message: 'Standard-Datensammlung erkannt'
+      });
+    }
+  });
+  results.scores.dataCollection = Math.max(0, 100 - dataCollectionConcerns);
+
+  // Analyze data selling
+  let dataSellingConcerns = 0;
+  PRIVACY_POLICY_PATTERNS.dataSelling.critical.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      dataSellingConcerns += matches.length * 30;
+      results.findings.push({
+        category: 'dataSelling',
+        severity: 'critical',
+        pattern: pattern.toString(),
+        count: matches.length,
+        message: 'Datenweitergabe/-verkauf erkannt'
+      });
+    }
+  });
+  PRIVACY_POLICY_PATTERNS.dataSelling.warning.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      dataSellingConcerns += matches.length * 10;
+      results.findings.push({
+        category: 'dataSelling',
+        severity: 'warning',
+        pattern: pattern.toString(),
+        count: matches.length,
+        message: 'Drittanbieter-Weitergabe erwähnt'
+      });
+    }
+  });
+  results.scores.dataSelling = Math.max(0, 100 - dataSellingConcerns);
+
+  // Analyze user rights (positive indicators)
+  let userRightsScore = 0;
+  PRIVACY_POLICY_PATTERNS.userRights.positive.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      userRightsScore += matches.length * 15;
+      results.findings.push({
+        category: 'userRights',
+        severity: 'positive',
+        pattern: pattern.toString(),
+        count: matches.length,
+        message: 'Nutzerrechte dokumentiert'
+      });
+    }
+  });
+  results.scores.userRights = Math.min(100, userRightsScore);
+
+  // Analyze retention
+  let retentionScore = 50;
+  PRIVACY_POLICY_PATTERNS.retention.concerning.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      retentionScore -= matches.length * 20;
+      results.findings.push({
+        category: 'retention',
+        severity: 'warning',
+        pattern: pattern.toString(),
+        count: matches.length,
+        message: 'Lange Speicherdauer möglich'
+      });
+    }
+  });
+  PRIVACY_POLICY_PATTERNS.retention.positive.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      retentionScore += matches.length * 15;
+      results.findings.push({
+        category: 'retention',
+        severity: 'positive',
+        pattern: pattern.toString(),
+        count: matches.length,
+        message: 'Begrenzte Speicherdauer erwähnt'
+      });
+    }
+  });
+  results.scores.retention = Math.max(0, Math.min(100, retentionScore));
+
+  // Analyze security
+  let securityScore = 50;
+  PRIVACY_POLICY_PATTERNS.security.positive.forEach(pattern => {
+    const matches = text.match(pattern);
+    if (matches) {
+      securityScore += matches.length * 10;
+      results.findings.push({
+        category: 'security',
+        severity: 'positive',
+        pattern: pattern.toString(),
+        count: matches.length,
+        message: 'Sicherheitsmaßnahmen erwähnt'
+      });
+    }
+  });
+  results.scores.security = Math.min(100, securityScore);
+
+  // Calculate overall score (weighted average)
+  results.overallScore = Math.round(
+    (results.scores.dataCollection * 0.25) +
+    (results.scores.dataSelling * 0.30) +
+    (results.scores.userRights * 0.20) +
+    (results.scores.retention * 0.15) +
+    (results.scores.security * 0.10)
+  );
+
+  // Determine grade
+  if (results.overallScore >= 90) results.grade = 'A';
+  else if (results.overallScore >= 75) results.grade = 'B';
+  else if (results.overallScore >= 60) results.grade = 'C';
+  else if (results.overallScore >= 40) results.grade = 'D';
+  else results.grade = 'F';
+
+  // Generate summary
+  results.summary = generatePolicySummary(results);
+
+  return results;
+}
+
+// Helper: Generate policy summary
+function generatePolicySummary(analysis) {
+  const concerns = [];
+  const positives = [];
+
+  if (analysis.scores.dataCollection < 50) {
+    concerns.push('Umfangreiche Datensammlung');
+  }
+  if (analysis.scores.dataSelling < 50) {
+    concerns.push('Datenweitergabe an Dritte');
+  }
+  if (analysis.scores.retention < 40) {
+    concerns.push('Lange Speicherfristen');
+  }
+
+  if (analysis.scores.userRights >= 60) {
+    positives.push('Nutzerrechte dokumentiert');
+  }
+  if (analysis.scores.security >= 70) {
+    positives.push('Sicherheitsmaßnahmen vorhanden');
+  }
+  if (analysis.scores.dataCollection >= 70) {
+    positives.push('Minimale Datensammlung');
+  }
+
+  let recommendation;
+  if (analysis.overallScore >= 75) {
+    recommendation = 'Dieser Dienst hat eine relativ datenschutzfreundliche Richtlinie.';
+  } else if (analysis.overallScore >= 50) {
+    recommendation = 'Vorsicht geboten. Prüfen Sie die Einstellungsmöglichkeiten.';
+  } else {
+    recommendation = 'Kritisch! Überlegen Sie, ob Sie diesen Dienst wirklich nutzen müssen.';
+  }
+
+  return {
+    concerns,
+    positives,
+    recommendation,
+    shortSummary: `Datenschutz-Bewertung: ${analysis.grade} (${analysis.overallScore}/100)`
+  };
+}
+
+// Helper: Extract domain from URL
+function extractDomain(url) {
+  try {
+    const urlObj = new URL(url.startsWith('http') ? url : `https://${url}`);
+    return urlObj.hostname.replace('www.', '');
+  } catch {
+    return url.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0];
+  }
+}
+
+// ===========================================
 // Phase 11: Privacy Templates
 // ===========================================
 
@@ -4480,8 +5065,8 @@ app.get('/', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '11.0.0',
-    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint', 'privacyCoach', 'privacyTemplates'],
+    version: '13.0.0',
+    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint', 'dataBreachAlerts', 'privacyCoach', 'privacyTemplates', 'policyAnalyzer'],
     languages: SUPPORTED_LANGUAGES,
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
@@ -5431,7 +6016,7 @@ app.get('/api/v2/health', (req, res) => {
   res.json({
     status: 'ok',
     service: 'achtung.live API',
-    version: '11.0.0',
+    version: '13.0.0',
     timestamp: new Date().toISOString(),
     providers: {
       openai: {
@@ -5493,6 +6078,19 @@ app.get('/api/v2/health', (req, res) => {
       gdprRequestTypes: Object.keys(GDPR_TEMPLATES).length,
       features: ['categories', 'templates', 'customize', 'analyze', 'gdprRequests', 'favorites', 'search']
     },
+    dataBreachAlerts: {
+      enabled: true,
+      breachDatabase: BREACH_DATABASE.length,
+      activeSubscriptions: alertSubscriptions.size,
+      severityLevels: Object.keys(BREACH_SEVERITY).length,
+      features: ['subscribe', 'verify', 'status', 'recentBreaches', 'unsubscribe', 'history', 'preferences']
+    },
+    policyAnalyzer: {
+      enabled: true,
+      knownServices: Object.keys(KNOWN_PRIVACY_SERVICES).length,
+      policyPatterns: Object.keys(PRIVACY_POLICY_PATTERNS).length,
+      features: ['analyze', 'knownService', 'servicesList', 'compare']
+    },
     pwa: {
       offlinePatternsEndpoint: '/api/v2/patterns/offline',
       pingEndpoint: '/api/v2/ping'
@@ -5532,6 +6130,15 @@ app.get('/api/v2/health', (req, res) => {
         '/api/v2/templates/categories', '/api/v2/templates/category/:id', '/api/v2/templates/:id',
         '/api/v2/templates/customize', '/api/v2/templates/analyze', '/api/v2/templates/gdpr/:type',
         '/api/v2/templates/favorite', '/api/v2/templates/favorites', '/api/v2/templates/search'
+      ],
+      alerts: [
+        '/api/v2/alerts/subscribe', '/api/v2/alerts/verify/:token', '/api/v2/alerts/status',
+        '/api/v2/alerts/recent-breaches', '/api/v2/alerts/unsubscribe/:id',
+        '/api/v2/alerts/history/:email', '/api/v2/alerts/preferences'
+      ],
+      policy: [
+        '/api/v2/policy/analyze', '/api/v2/policy/known/:domain',
+        '/api/v2/policy/services', '/api/v2/policy/compare'
       ]
     }
   });
@@ -5617,7 +6224,7 @@ app.get('/api/v2/patterns/offline', (req, res) => {
   }
 
   res.json({
-    version: '11.0.0',
+    version: '13.0.0',
     lang,
     lastUpdated: new Date().toISOString(),
     patterns,
@@ -7520,6 +8127,413 @@ app.get('/api/v2/coach/quick-tips', (req, res) => {
 });
 
 // ===========================================
+// API v2 - Phase 9 Endpoints (Data Breach Alerts)
+// ===========================================
+
+// POST /api/v2/alerts/subscribe - Subscribe to breach alerts
+app.post('/api/v2/alerts/subscribe', (req, res) => {
+  const { email, preferences = {} } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      error: 'E-Mail-Adresse ist erforderlich'
+    });
+  }
+
+  // Validate email format
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return res.status(400).json({
+      success: false,
+      error: 'Ungültige E-Mail-Adresse'
+    });
+  }
+
+  // Check if already subscribed
+  if (alertSubscriptions.has(email)) {
+    const existing = alertSubscriptions.get(email);
+    if (existing.verified) {
+      return res.status(409).json({
+        success: false,
+        error: 'Diese E-Mail-Adresse ist bereits registriert',
+        subscriptionId: existing.id
+      });
+    }
+  }
+
+  // Generate verification token
+  const token = generateVerificationToken();
+  const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+  // Store subscription (unverified)
+  const subscription = {
+    id: subscriptionId,
+    email,
+    verified: false,
+    verificationToken: token,
+    preferences: { ...DEFAULT_ALERT_PREFERENCES, ...preferences },
+    createdAt: new Date().toISOString(),
+    lastNotification: null
+  };
+
+  alertSubscriptions.set(email, subscription);
+  verificationTokens.set(token, {
+    email,
+    expires: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+    type: 'email_verification'
+  });
+
+  res.json({
+    success: true,
+    message: 'Bestätigungs-E-Mail wurde gesendet (Demo: Token wird zurückgegeben)',
+    subscriptionId,
+    verificationToken: token, // In production, this would be sent via email
+    verificationUrl: `/api/v2/alerts/verify/${token}`,
+    expiresIn: '24 hours'
+  });
+});
+
+// GET /api/v2/alerts/verify/:token - Verify email subscription
+app.get('/api/v2/alerts/verify/:token', (req, res) => {
+  const { token } = req.params;
+
+  const tokenData = verificationTokens.get(token);
+  if (!tokenData) {
+    return res.status(404).json({
+      success: false,
+      error: 'Ungültiger oder abgelaufener Bestätigungslink'
+    });
+  }
+
+  // Check expiration
+  if (Date.now() > tokenData.expires) {
+    verificationTokens.delete(token);
+    return res.status(410).json({
+      success: false,
+      error: 'Bestätigungslink ist abgelaufen. Bitte erneut registrieren.'
+    });
+  }
+
+  // Verify subscription
+  const subscription = alertSubscriptions.get(tokenData.email);
+  if (!subscription) {
+    return res.status(404).json({
+      success: false,
+      error: 'Subscription nicht gefunden'
+    });
+  }
+
+  subscription.verified = true;
+  subscription.verifiedAt = new Date().toISOString();
+  delete subscription.verificationToken;
+  alertSubscriptions.set(tokenData.email, subscription);
+  verificationTokens.delete(token);
+
+  // Check for existing breaches
+  const relevantBreaches = getRelevantBreaches(tokenData.email, subscription.preferences);
+  const recentBreaches = relevantBreaches.slice(0, 5);
+
+  res.json({
+    success: true,
+    message: 'E-Mail-Adresse erfolgreich bestätigt',
+    subscriptionId: subscription.id,
+    email: tokenData.email,
+    preferences: subscription.preferences,
+    existingBreaches: {
+      count: relevantBreaches.length,
+      recent: recentBreaches.map(b => ({
+        name: b.name,
+        date: b.date,
+        severity: b.severity,
+        dataTypes: b.dataTypes
+      }))
+    }
+  });
+});
+
+// GET /api/v2/alerts/status - Get subscription status
+app.get('/api/v2/alerts/status', (req, res) => {
+  const email = req.query.email || req.headers['x-user-email'];
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      error: 'E-Mail-Adresse ist erforderlich'
+    });
+  }
+
+  const subscription = alertSubscriptions.get(email);
+  if (!subscription) {
+    return res.json({
+      success: true,
+      subscribed: false,
+      message: 'Keine aktive Subscription gefunden'
+    });
+  }
+
+  // Get breach statistics
+  const relevantBreaches = getRelevantBreaches(email, subscription.preferences);
+  const history = alertHistory.get(email) || [];
+
+  res.json({
+    success: true,
+    subscribed: true,
+    subscription: {
+      id: subscription.id,
+      email: subscription.email,
+      verified: subscription.verified,
+      createdAt: subscription.createdAt,
+      verifiedAt: subscription.verifiedAt,
+      lastNotification: subscription.lastNotification,
+      preferences: subscription.preferences
+    },
+    statistics: {
+      totalBreachesMonitored: BREACH_DATABASE.length,
+      relevantBreaches: relevantBreaches.length,
+      notificationsSent: history.length,
+      lastCheck: new Date().toISOString()
+    }
+  });
+});
+
+// GET /api/v2/alerts/recent-breaches - Get recent data breaches
+app.get('/api/v2/alerts/recent-breaches', (req, res) => {
+  const { limit = 10, category, severity, offset = 0 } = req.query;
+  const email = req.query.email || req.headers['x-user-email'];
+
+  let breaches = [...BREACH_DATABASE];
+
+  // Filter by category
+  if (category && category !== 'all') {
+    breaches = breaches.filter(b => b.category === category);
+  }
+
+  // Filter by severity
+  if (severity) {
+    breaches = breaches.filter(b => {
+      const breachSeverity = calculateBreachSeverity(b.dataTypes);
+      return breachSeverity === severity;
+    });
+  }
+
+  // Sort by date (most recent first)
+  breaches.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  // Apply pagination
+  const total = breaches.length;
+  const paginatedBreaches = breaches.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
+
+  // Format breaches with severity info
+  const formattedBreaches = paginatedBreaches.map(breach => {
+    const severity = calculateBreachSeverity(breach.dataTypes);
+    return {
+      id: breach.id || `breach_${breach.name.toLowerCase().replace(/\s/g, '_')}`,
+      name: breach.name,
+      domain: breach.domain,
+      date: breach.date,
+      category: breach.category,
+      compromisedAccounts: breach.compromisedAccounts,
+      dataTypes: breach.dataTypes,
+      severity,
+      severityInfo: BREACH_SEVERITY[severity],
+      description: breach.description,
+      potentiallyAffected: email ? emailMatchesBreach(email, breach) : null,
+      recommendations: [
+        'Passwort ändern',
+        'Zwei-Faktor-Authentifizierung aktivieren',
+        'Kontobewegungen prüfen'
+      ]
+    };
+  });
+
+  // Calculate statistics
+  const stats = {
+    totalBreaches: total,
+    bySeverity: {
+      critical: BREACH_DATABASE.filter(b => calculateBreachSeverity(b.dataTypes) === 'critical').length,
+      high: BREACH_DATABASE.filter(b => calculateBreachSeverity(b.dataTypes) === 'high').length,
+      medium: BREACH_DATABASE.filter(b => calculateBreachSeverity(b.dataTypes) === 'medium').length,
+      low: BREACH_DATABASE.filter(b => calculateBreachSeverity(b.dataTypes) === 'low').length
+    },
+    totalCompromised: BREACH_DATABASE.reduce((sum, b) => sum + (b.compromisedAccounts || 0), 0),
+    mostRecentBreach: BREACH_DATABASE.length > 0 ?
+      BREACH_DATABASE.reduce((a, b) => new Date(a.date) > new Date(b.date) ? a : b).date : null
+  };
+
+  res.json({
+    success: true,
+    breaches: formattedBreaches,
+    pagination: {
+      total,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      hasMore: parseInt(offset) + parseInt(limit) < total
+    },
+    statistics: stats
+  });
+});
+
+// DELETE /api/v2/alerts/unsubscribe/:id - Unsubscribe from alerts
+app.delete('/api/v2/alerts/unsubscribe/:id', (req, res) => {
+  const { id } = req.params;
+  const email = req.query.email || req.headers['x-user-email'];
+
+  // Find subscription by ID or email
+  let foundEmail = null;
+  for (const [subEmail, subscription] of alertSubscriptions.entries()) {
+    if (subscription.id === id || subEmail === email) {
+      foundEmail = subEmail;
+      break;
+    }
+  }
+
+  if (!foundEmail) {
+    return res.status(404).json({
+      success: false,
+      error: 'Subscription nicht gefunden'
+    });
+  }
+
+  const subscription = alertSubscriptions.get(foundEmail);
+  alertSubscriptions.delete(foundEmail);
+
+  // Also clean up any pending verification tokens
+  for (const [token, data] of verificationTokens.entries()) {
+    if (data.email === foundEmail) {
+      verificationTokens.delete(token);
+    }
+  }
+
+  res.json({
+    success: true,
+    message: 'Erfolgreich abgemeldet',
+    unsubscribedEmail: foundEmail,
+    subscriptionId: subscription.id
+  });
+});
+
+// GET /api/v2/alerts/history/:email - Get notification history
+app.get('/api/v2/alerts/history/:email', (req, res) => {
+  const { email } = req.params;
+  const { limit = 20, offset = 0 } = req.query;
+
+  // Validate email
+  const subscription = alertSubscriptions.get(email);
+  if (!subscription) {
+    return res.status(404).json({
+      success: false,
+      error: 'Keine Subscription für diese E-Mail gefunden'
+    });
+  }
+
+  const history = alertHistory.get(email) || [];
+
+  // Generate demo history if none exists
+  let notifications = history;
+  if (notifications.length === 0 && subscription.verified) {
+    // Create demo notification history based on relevant breaches
+    const relevantBreaches = getRelevantBreaches(email, subscription.preferences);
+    notifications = relevantBreaches.slice(0, 5).map((breach, index) => ({
+      id: `notif_${Date.now()}_${index}`,
+      breachId: breach.id || breach.name,
+      breachName: breach.name,
+      severity: breach.severity,
+      notifiedAt: new Date(Date.now() - (index * 7 * 24 * 60 * 60 * 1000)).toISOString(),
+      status: 'delivered',
+      type: subscription.preferences.immediateAlerts ? 'immediate' : 'digest'
+    }));
+  }
+
+  // Pagination
+  const total = notifications.length;
+  const paginatedNotifications = notifications.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
+
+  res.json({
+    success: true,
+    email,
+    subscriptionId: subscription.id,
+    notifications: paginatedNotifications,
+    pagination: {
+      total,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      hasMore: parseInt(offset) + parseInt(limit) < total
+    },
+    summary: {
+      totalNotifications: total,
+      criticalAlerts: notifications.filter(n => n.severity === 'critical').length,
+      highAlerts: notifications.filter(n => n.severity === 'high').length,
+      lastNotification: notifications[0]?.notifiedAt || null
+    }
+  });
+});
+
+// POST /api/v2/alerts/preferences - Update notification preferences
+app.post('/api/v2/alerts/preferences', (req, res) => {
+  const { email, preferences } = req.body;
+
+  if (!email) {
+    return res.status(400).json({
+      success: false,
+      error: 'E-Mail-Adresse ist erforderlich'
+    });
+  }
+
+  const subscription = alertSubscriptions.get(email);
+  if (!subscription) {
+    return res.status(404).json({
+      success: false,
+      error: 'Keine Subscription für diese E-Mail gefunden'
+    });
+  }
+
+  if (!subscription.verified) {
+    return res.status(403).json({
+      success: false,
+      error: 'E-Mail-Adresse ist noch nicht bestätigt'
+    });
+  }
+
+  // Validate preferences
+  const validPreferences = {
+    emailNotifications: typeof preferences.emailNotifications === 'boolean' ?
+      preferences.emailNotifications : subscription.preferences.emailNotifications,
+    pushNotifications: typeof preferences.pushNotifications === 'boolean' ?
+      preferences.pushNotifications : subscription.preferences.pushNotifications,
+    immediateAlerts: typeof preferences.immediateAlerts === 'boolean' ?
+      preferences.immediateAlerts : subscription.preferences.immediateAlerts,
+    weeklyDigest: typeof preferences.weeklyDigest === 'boolean' ?
+      preferences.weeklyDigest : subscription.preferences.weeklyDigest,
+    severityThreshold: ['low', 'medium', 'high', 'critical'].includes(preferences.severityThreshold) ?
+      preferences.severityThreshold : subscription.preferences.severityThreshold,
+    categories: Array.isArray(preferences.categories) ?
+      preferences.categories : subscription.preferences.categories,
+    language: ['de', 'en'].includes(preferences.language) ?
+      preferences.language : subscription.preferences.language
+  };
+
+  subscription.preferences = validPreferences;
+  subscription.preferencesUpdatedAt = new Date().toISOString();
+  alertSubscriptions.set(email, subscription);
+
+  // Calculate how these preferences affect monitoring
+  const relevantBreaches = getRelevantBreaches(email, validPreferences);
+
+  res.json({
+    success: true,
+    message: 'Einstellungen erfolgreich aktualisiert',
+    subscriptionId: subscription.id,
+    preferences: validPreferences,
+    impact: {
+      breachesMonitored: relevantBreaches.length,
+      severityThreshold: BREACH_SEVERITY[validPreferences.severityThreshold],
+      estimatedAlerts: Math.ceil(relevantBreaches.length / 10) // Estimate based on breach frequency
+    }
+  });
+});
+
+// ===========================================
 // API v2 - Phase 11 Endpoints (Privacy Templates)
 // ===========================================
 
@@ -7896,6 +8910,354 @@ app.get('/api/v2/templates/search', (req, res) => {
       tags: t.tags,
       preview: t.preview
     }))
+  });
+});
+
+// ===========================================
+// API v2 - Phase 13 Endpoints (Privacy Policy Analyzer)
+// ===========================================
+
+// POST /api/v2/policy/analyze - Analyze privacy policy text or URL
+app.post('/api/v2/policy/analyze', async (req, res) => {
+  const { text, url, options = {} } = req.body;
+
+  if (!text && !url) {
+    return res.status(400).json({
+      success: false,
+      error: 'Entweder "text" oder "url" ist erforderlich'
+    });
+  }
+
+  let policyText = text;
+  let analyzedUrl = url;
+
+  // If URL provided, check if it's a known service first
+  if (url && !text) {
+    const domain = extractDomain(url);
+    const knownService = KNOWN_PRIVACY_SERVICES[domain];
+
+    if (knownService) {
+      // Return cached analysis for known services
+      return res.json({
+        success: true,
+        source: 'known_service',
+        domain,
+        service: knownService.name,
+        analysis: {
+          url,
+          analyzedAt: knownService.lastAnalyzed,
+          overallScore: knownService.privacyScore,
+          grade: knownService.grade,
+          scores: {
+            dataCollection: knownService.privacyScore < 50 ? 40 : 70,
+            dataSelling: knownService.dataSelling === 'Nein' ? 100 : 50,
+            userRights: knownService.gdprCompliant ? 80 : 40,
+            retention: 50,
+            security: 60
+          },
+          dataCollection: knownService.dataCollection,
+          dataSelling: knownService.dataSelling,
+          dataRetention: knownService.dataRetention,
+          gdprCompliant: knownService.gdprCompliant,
+          deleteOption: knownService.deleteOption,
+          exportOption: knownService.exportOption,
+          summary: {
+            concerns: knownService.concerns,
+            positives: knownService.positives,
+            recommendation: knownService.privacyScore >= 70 ?
+              'Dieser Dienst hat eine relativ datenschutzfreundliche Richtlinie.' :
+              knownService.privacyScore >= 50 ?
+                'Vorsicht geboten. Prüfen Sie die Einstellungsmöglichkeiten.' :
+                'Kritisch! Überlegen Sie, ob Sie diesen Dienst wirklich nutzen müssen.',
+            shortSummary: `Datenschutz-Bewertung: ${knownService.grade} (${knownService.privacyScore}/100)`
+          }
+        },
+        recommendations: [
+          knownService.privacyScore < 60 ? 'Datenschutzeinstellungen prüfen und anpassen' : null,
+          knownService.deleteOption ? 'Löschoption nutzen wenn nicht mehr benötigt' : null,
+          knownService.exportOption ? 'Regelmäßig Datenexport erstellen' : null,
+          'Zwei-Faktor-Authentifizierung aktivieren'
+        ].filter(Boolean)
+      });
+    }
+
+    // For unknown URLs, provide a demo analysis
+    policyText = `Dies ist eine Demo-Analyse. Die URL ${url} ist nicht in unserer Datenbank bekannter Dienste.
+    Für eine echte Analyse würde der Text der Datenschutzerklärung benötigt.
+    Wir sammeln personenbezogene Daten wie E-Mail und Nutzungsdaten.
+    Daten werden mit Drittanbietern geteilt.
+    Sie haben das Recht auf Löschung Ihrer Daten.
+    Wir verwenden Verschlüsselung zum Schutz Ihrer Daten.`;
+  }
+
+  // Analyze the policy text
+  const analysis = analyzePrivacyPolicy(policyText, analyzedUrl);
+
+  // Add comparison with known services
+  const similarServices = Object.entries(KNOWN_PRIVACY_SERVICES)
+    .filter(([_, service]) => {
+      // Find services with similar scores (within 20 points)
+      return Math.abs(service.privacyScore - analysis.overallScore) <= 20;
+    })
+    .slice(0, 3)
+    .map(([domain, service]) => ({
+      domain,
+      name: service.name,
+      score: service.privacyScore,
+      grade: service.grade
+    }));
+
+  res.json({
+    success: true,
+    source: 'text_analysis',
+    analysis: {
+      ...analysis,
+      wordCount: policyText.split(/\s+/).length,
+      language: /[äöüß]/i.test(policyText) ? 'de' : 'en'
+    },
+    comparison: {
+      similarServices,
+      betterAlternatives: Object.entries(KNOWN_PRIVACY_SERVICES)
+        .filter(([_, service]) => service.privacyScore >= 75)
+        .slice(0, 3)
+        .map(([domain, service]) => ({
+          domain,
+          name: service.name,
+          score: service.privacyScore,
+          grade: service.grade,
+          category: service.category
+        }))
+    },
+    recommendations: [
+      analysis.overallScore < 50 ? 'Kritische Datenschutzrisiken - Alternative in Betracht ziehen' : null,
+      analysis.scores.dataSelling < 60 ? 'Datenweitergabe-Einstellungen prüfen' : null,
+      analysis.scores.dataCollection < 50 ? 'Nur notwendige Daten angeben' : null,
+      'Regelmäßig Datenschutzeinstellungen überprüfen'
+    ].filter(Boolean)
+  });
+});
+
+// GET /api/v2/policy/known/:domain - Get known service privacy info
+app.get('/api/v2/policy/known/:domain', (req, res) => {
+  const { domain } = req.params;
+
+  // Normalize domain
+  const normalizedDomain = domain.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0].toLowerCase();
+
+  // Check exact match first
+  let service = KNOWN_PRIVACY_SERVICES[normalizedDomain];
+
+  // If not found, try to find partial match
+  if (!service) {
+    for (const [knownDomain, knownService] of Object.entries(KNOWN_PRIVACY_SERVICES)) {
+      if (normalizedDomain.includes(knownDomain) || knownDomain.includes(normalizedDomain)) {
+        service = knownService;
+        break;
+      }
+    }
+  }
+
+  if (!service) {
+    return res.status(404).json({
+      success: false,
+      error: 'Dienst nicht in Datenbank gefunden',
+      domain: normalizedDomain,
+      suggestion: 'Nutzen Sie POST /api/v2/policy/analyze mit dem Text der Datenschutzerklärung',
+      similarDomains: Object.keys(KNOWN_PRIVACY_SERVICES).filter(d =>
+        d.split('.')[0].startsWith(normalizedDomain.split('.')[0].substring(0, 3))
+      )
+    });
+  }
+
+  res.json({
+    success: true,
+    domain: normalizedDomain,
+    service: {
+      ...service,
+      comparisons: {
+        betterThan: Object.entries(KNOWN_PRIVACY_SERVICES)
+          .filter(([_, s]) => s.privacyScore < service.privacyScore)
+          .map(([d, s]) => ({ domain: d, name: s.name, score: s.privacyScore }))
+          .slice(0, 3),
+        worseThan: Object.entries(KNOWN_PRIVACY_SERVICES)
+          .filter(([_, s]) => s.privacyScore > service.privacyScore)
+          .map(([d, s]) => ({ domain: d, name: s.name, score: s.privacyScore }))
+          .slice(0, 3)
+      }
+    },
+    actionItems: [
+      !service.deleteOption ? null : {
+        action: 'Datenlöschung anfordern',
+        description: 'Dieser Dienst bietet eine Löschoption',
+        priority: 'medium'
+      },
+      !service.exportOption ? null : {
+        action: 'Datenexport erstellen',
+        description: 'Erstellen Sie eine Kopie Ihrer Daten',
+        priority: 'low'
+      },
+      service.privacyScore < 50 ? {
+        action: 'Alternative prüfen',
+        description: 'Erwägen Sie datenschutzfreundlichere Alternativen',
+        priority: 'high'
+      } : null
+    ].filter(Boolean)
+  });
+});
+
+// GET /api/v2/policy/services - List all known services
+app.get('/api/v2/policy/services', (req, res) => {
+  const { category, minScore, sortBy = 'score', order = 'desc' } = req.query;
+
+  let services = Object.entries(KNOWN_PRIVACY_SERVICES).map(([domain, service]) => ({
+    domain,
+    ...service
+  }));
+
+  // Filter by category
+  if (category) {
+    services = services.filter(s => s.category === category);
+  }
+
+  // Filter by minimum score
+  if (minScore) {
+    services = services.filter(s => s.privacyScore >= parseInt(minScore));
+  }
+
+  // Sort
+  services.sort((a, b) => {
+    const valueA = sortBy === 'score' ? a.privacyScore : a.name;
+    const valueB = sortBy === 'score' ? b.privacyScore : b.name;
+    const comparison = typeof valueA === 'number' ? valueA - valueB : valueA.localeCompare(valueB);
+    return order === 'desc' ? -comparison : comparison;
+  });
+
+  // Group by category
+  const byCategory = {};
+  services.forEach(s => {
+    if (!byCategory[s.category]) byCategory[s.category] = [];
+    byCategory[s.category].push(s);
+  });
+
+  // Calculate statistics
+  const stats = {
+    totalServices: Object.keys(KNOWN_PRIVACY_SERVICES).length,
+    averageScore: Math.round(
+      Object.values(KNOWN_PRIVACY_SERVICES).reduce((sum, s) => sum + s.privacyScore, 0) /
+      Object.keys(KNOWN_PRIVACY_SERVICES).length
+    ),
+    byGrade: {
+      A: services.filter(s => s.grade === 'A').length,
+      B: services.filter(s => s.grade === 'B').length,
+      C: services.filter(s => s.grade === 'C').length,
+      D: services.filter(s => s.grade === 'D').length,
+      F: services.filter(s => s.grade === 'F').length
+    },
+    categories: [...new Set(Object.values(KNOWN_PRIVACY_SERVICES).map(s => s.category))]
+  };
+
+  res.json({
+    success: true,
+    services,
+    byCategory,
+    statistics: stats,
+    recommendations: {
+      bestPrivacy: services.filter(s => s.privacyScore >= 80).map(s => ({
+        domain: s.domain,
+        name: s.name,
+        score: s.privacyScore,
+        category: s.category
+      })),
+      avoid: services.filter(s => s.privacyScore < 40).map(s => ({
+        domain: s.domain,
+        name: s.name,
+        score: s.privacyScore,
+        concerns: s.concerns
+      }))
+    }
+  });
+});
+
+// POST /api/v2/policy/compare - Compare multiple services
+app.post('/api/v2/policy/compare', (req, res) => {
+  const { domains } = req.body;
+
+  if (!domains || !Array.isArray(domains) || domains.length < 2) {
+    return res.status(400).json({
+      success: false,
+      error: 'Mindestens 2 Domains zum Vergleichen erforderlich'
+    });
+  }
+
+  if (domains.length > 5) {
+    return res.status(400).json({
+      success: false,
+      error: 'Maximal 5 Domains können verglichen werden'
+    });
+  }
+
+  const comparisons = domains.map(domain => {
+    const normalizedDomain = domain.replace(/^(https?:\/\/)?(www\.)?/, '').split('/')[0].toLowerCase();
+    const service = KNOWN_PRIVACY_SERVICES[normalizedDomain];
+
+    if (!service) {
+      return {
+        domain: normalizedDomain,
+        found: false,
+        error: 'Dienst nicht in Datenbank'
+      };
+    }
+
+    return {
+      domain: normalizedDomain,
+      found: true,
+      name: service.name,
+      category: service.category,
+      privacyScore: service.privacyScore,
+      grade: service.grade,
+      gdprCompliant: service.gdprCompliant,
+      deleteOption: service.deleteOption,
+      exportOption: service.exportOption,
+      dataCollection: service.dataCollection,
+      dataSelling: service.dataSelling,
+      concerns: service.concerns,
+      positives: service.positives
+    };
+  });
+
+  const foundServices = comparisons.filter(c => c.found);
+
+  // Determine winner
+  let winner = null;
+  let recommendation = '';
+  if (foundServices.length >= 2) {
+    winner = foundServices.reduce((best, current) =>
+      current.privacyScore > best.privacyScore ? current : best
+    );
+    recommendation = `${winner.name} hat mit ${winner.privacyScore}/100 Punkten die beste Datenschutzbewertung.`;
+  }
+
+  // Create comparison matrix
+  const comparisonMatrix = {
+    scores: foundServices.map(s => ({ name: s.name, score: s.privacyScore })),
+    features: {
+      gdprCompliant: foundServices.map(s => ({ name: s.name, value: s.gdprCompliant })),
+      deleteOption: foundServices.map(s => ({ name: s.name, value: s.deleteOption })),
+      exportOption: foundServices.map(s => ({ name: s.name, value: s.exportOption }))
+    }
+  };
+
+  res.json({
+    success: true,
+    comparisons,
+    summary: {
+      totalCompared: domains.length,
+      foundInDatabase: foundServices.length,
+      notFound: comparisons.filter(c => !c.found).map(c => c.domain),
+      winner: winner ? { domain: winner.domain, name: winner.name, score: winner.privacyScore } : null,
+      recommendation
+    },
+    matrix: comparisonMatrix
   });
 });
 
