@@ -7,6 +7,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const OpenAI = require('openai');
+const rateLimit = require('express-rate-limit');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -302,11 +303,51 @@ function getLocalizedSummary(count, lang = 'de') {
 
 // Middleware
 app.use(cors({
-  origin: ['https://achtung.live', 'http://localhost:3000', 'http://localhost:8888'],
+  origin: [
+    'https://achtung.live',
+    /\.achtung\.live$/,
+    'http://localhost:3000',
+    'http://localhost:8888'
+  ],
   methods: ['GET', 'POST', 'OPTIONS'],
   allowedHeaders: ['Content-Type']
 }));
-app.use(express.json());
+app.use(express.json({ limit: '100kb' }));
+
+// Rate Limiters for text-correction endpoints
+const textCorrectLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      error: {
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Zu viele Anfragen. Bitte warte 30 Sekunden.',
+        retryAfter: 30
+      }
+    });
+  }
+});
+
+const textImproveLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      error: {
+        code: 'RATE_LIMIT_EXCEEDED',
+        message: 'Zu viele Anfragen. Bitte warte 60 Sekunden.',
+        retryAfter: 60
+      }
+    });
+  }
+});
 
 // Analyse-Prompt für GPT
 const ANALYZE_SYSTEM_PROMPT = `Du bist ein Datenschutz-Experte und analysierst Texte auf sensible Informationen.
@@ -5737,7 +5778,7 @@ app.get('/', (req, res) => {
     status: 'ok',
     service: 'achtung.live API',
     version: '14.0.0',
-    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint', 'dataBreachAlerts', 'privacyCoach', 'privacyTemplates', 'policyAnalyzer', 'browserExtension'],
+    features: ['quickCheck', 'batchAnalysis', 'smartRewrite', 'providerFallback', 'multiLanguage', 'offlinePatterns', 'predictivePrivacy', 'digitalFootprint', 'dataBreachAlerts', 'privacyCoach', 'privacyTemplates', 'policyAnalyzer', 'browserExtension', 'textCorrection', 'textImprove', 'readabilityAnalysis'],
     languages: SUPPORTED_LANGUAGES,
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
@@ -6784,7 +6825,10 @@ app.get('/api/v2/health', (req, res) => {
       coachExplain: '20/min (recommended)',
       coachAnalyzeRisk: '10/min (recommended)',
       templatesCustomize: '30/min (recommended)',
-      templatesAnalyze: '20/min (recommended)'
+      templatesAnalyze: '20/min (recommended)',
+      textCorrect: '30/min',
+      textImprove: '10/min',
+      readability: '30/min'
     },
     endpoints: {
       v1: ['/analyze', '/rewrite', '/howto'],
@@ -6823,6 +6867,9 @@ app.get('/api/v2/health', (req, res) => {
         '/api/v2/extension/analyze-field', '/api/v2/extension/analyze-form',
         '/api/v2/extension/detect-dark-patterns', '/api/v2/extension/analyze-cookies',
         '/api/v2/extension/dark-patterns', '/api/v2/extension/tracker-database'
+      ],
+      textCorrection: [
+        '/api/v2/text-correct', '/api/v2/text-improve', '/api/v2/readability'
       ]
     }
   });
@@ -10331,6 +10378,689 @@ app.get('/api/v2/extension/tracker-database', (req, res) => {
     lastUpdated: '2026-01-19'
   });
 });
+
+// ===========================================
+// Text Correction Mode (Phase 14) - v14.0.0
+// ===========================================
+
+// --- Readability Calculation Functions ---
+
+function countSyllablesDE(word) {
+  word = word.toLowerCase().replace(/[^a-zäöüß]/g, '');
+  if (word.length <= 1) return 1;
+  
+  const vowels = /[aeiouyäöü]/g;
+  const matches = word.match(vowels);
+  if (!matches) return 1;
+  
+  let count = 0;
+  let prevWasVowel = false;
+  for (let i = 0; i < word.length; i++) {
+    const isVowel = /[aeiouyäöü]/.test(word[i]);
+    if (isVowel && !prevWasVowel) count++;
+    prevWasVowel = isVowel;
+  }
+  
+  // German diphthongs (ei, au, eu, äu, ie) count as one syllable
+  const diphthongs = (word.match(/(?:ei|au|eu|äu|ie)/g) || []).length;
+  // Already handled by the vowel-group counting above
+  
+  // Silent e at end in some loanwords
+  if (word.endsWith('e') && word.length > 3 && count > 1) {
+    // Keep count as is for German (unlike English, final -e is usually pronounced)
+  }
+  
+  return Math.max(1, count);
+}
+
+function tokenizeText(text) {
+  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0);
+  const words = text.match(/\b[a-zA-ZäöüÄÖÜß]+\b/g) || [];
+  const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 0);
+  return { sentences, words, paragraphs };
+}
+
+function calculateFleschDE(avgSentenceLength, avgSyllablesPerWord) {
+  return Math.round((180 - avgSentenceLength - (58.5 * avgSyllablesPerWord)) * 10) / 10;
+}
+
+function calculateWienerSachtextformel(words) {
+  if (words.length === 0) return 0;
+  
+  const totalWords = words.length;
+  const syllableCounts = words.map(w => countSyllablesDE(w));
+  
+  const ms = (syllableCounts.filter(s => s >= 3).length / totalWords) * 100;
+  const sl = totalWords; // Will be divided by sentence count by caller
+  const iw = (words.filter(w => w.length >= 6).length / totalWords) * 100;
+  const es = (syllableCounts.filter(s => s === 1).length / totalWords) * 100;
+  
+  return { ms, iw, es };
+}
+
+function calculateWSTF(ms, sl, iw, es) {
+  return Math.round((0.1935 * ms + 0.1672 * sl + 0.1297 * iw - 0.0327 * es - 0.875) * 10) / 10;
+}
+
+function fleschToCEFR(flesch) {
+  if (flesch >= 80) return 'A1';
+  if (flesch >= 70) return 'A2';
+  if (flesch >= 60) return 'B1';
+  if (flesch >= 40) return 'B2';
+  if (flesch >= 20) return 'C1';
+  return 'C2';
+}
+
+function getFleschLabel(flesch, lang) {
+  if (lang === 'en') {
+    if (flesch >= 80) return 'Easy';
+    if (flesch >= 60) return 'Medium';
+    if (flesch >= 40) return 'Moderately difficult';
+    if (flesch >= 20) return 'Difficult';
+    return 'Very difficult';
+  }
+  if (flesch >= 80) return 'Leicht';
+  if (flesch >= 60) return 'Mittel';
+  if (flesch >= 40) return 'Mittlere Schwierigkeit';
+  if (flesch >= 20) return 'Schwierig';
+  return 'Sehr schwierig';
+}
+
+function getCEFRLabel(cefr, lang) {
+  const labels = {
+    de: { A1: 'Anfänger', A2: 'Grundlegend', B1: 'Mittelstufe', B2: 'Fortgeschritten', C1: 'Fachkundig', C2: 'Muttersprachlich' },
+    en: { A1: 'Beginner', A2: 'Elementary', B1: 'Intermediate', B2: 'Upper Intermediate', C1: 'Advanced', C2: 'Proficient' }
+  };
+  return (labels[lang] || labels.de)[cefr] || cefr;
+}
+
+function computeReadability(text, language) {
+  const { sentences, words, paragraphs } = tokenizeText(text);
+  
+  if (words.length === 0 || sentences.length === 0) {
+    return {
+      scores: { fleschDE: 0, fleschLabel: 'N/A', wienerSachtextformel: 0, cefr: 'N/A', cefrLabel: 'N/A' },
+      statistics: { characters: text.length, words: 0, sentences: 0, paragraphs: paragraphs.length, avgWordLength: 0, avgSentenceLength: 0, longestSentence: null, shortestSentence: null },
+      distribution: { shortSentences: 0, mediumSentences: 0, longSentences: 0, veryLongSentences: 0 },
+      suggestions: []
+    };
+  }
+  
+  const totalSyllables = words.reduce((sum, w) => sum + countSyllablesDE(w), 0);
+  const avgSentenceLength = words.length / sentences.length;
+  const avgSyllablesPerWord = totalSyllables / words.length;
+  const avgWordLength = words.reduce((sum, w) => sum + w.length, 0) / words.length;
+  
+  const flesch = calculateFleschDE(avgSentenceLength, avgSyllablesPerWord);
+  const cefr = fleschToCEFR(flesch);
+  const lang = (language || 'de').substring(0, 2);
+  
+  // Wiener Sachtextformel
+  const wstfParts = calculateWienerSachtextformel(words);
+  const wstf = calculateWSTF(wstfParts.ms, avgSentenceLength, wstfParts.iw, wstfParts.es);
+  
+  // Sentence analysis
+  const sentenceLengths = sentences.map(s => {
+    const sWords = s.trim().match(/\b[a-zA-ZäöüÄÖÜß]+\b/g) || [];
+    return { length: sWords.length, text: s.trim() };
+  });
+  
+  const sorted = [...sentenceLengths].sort((a, b) => a.length - b.length);
+  
+  const distribution = {
+    shortSentences: sentenceLengths.filter(s => s.length <= 8).length,
+    mediumSentences: sentenceLengths.filter(s => s.length > 8 && s.length <= 15).length,
+    longSentences: sentenceLengths.filter(s => s.length > 15 && s.length <= 25).length,
+    veryLongSentences: sentenceLengths.filter(s => s.length > 25).length
+  };
+  
+  // Suggestions
+  const suggestions = [];
+  if (distribution.veryLongSentences > 0) {
+    suggestions.push(lang === 'de'
+      ? `${distribution.veryLongSentences} Satz/Sätze mit mehr als 25 Wörtern – ggf. aufteilen für bessere Lesbarkeit.`
+      : `${distribution.veryLongSentences} sentence(s) with more than 25 words – consider splitting for better readability.`);
+  }
+  if (avgWordLength > 6) {
+    suggestions.push(lang === 'de'
+      ? 'Durchschnittliche Wortlänge ist erhöht – prüfe, ob Fachbegriffe vereinfacht werden können.'
+      : 'Average word length is elevated – check if technical terms can be simplified.');
+  }
+  if (flesch < 40) {
+    suggestions.push(lang === 'de'
+      ? 'Text ist schwer verständlich. Kürzere Sätze und einfachere Wörter verbessern die Lesbarkeit.'
+      : 'Text is difficult to understand. Shorter sentences and simpler words improve readability.');
+  }
+  if (distribution.shortSentences === 0 && sentences.length > 2) {
+    suggestions.push(lang === 'de'
+      ? 'Keine kurzen Sätze vorhanden – kurze Sätze lockern den Text auf.'
+      : 'No short sentences found – short sentences help break up the text.');
+  }
+  
+  return {
+    scores: {
+      fleschDE: Math.max(0, Math.min(100, flesch)),
+      fleschLabel: getFleschLabel(flesch, lang),
+      wienerSachtextformel: wstf,
+      cefr,
+      cefrLabel: getCEFRLabel(cefr, lang)
+    },
+    statistics: {
+      characters: text.length,
+      words: words.length,
+      sentences: sentences.length,
+      paragraphs: paragraphs.length,
+      avgWordLength: Math.round(avgWordLength * 10) / 10,
+      avgSentenceLength: Math.round(avgSentenceLength * 10) / 10,
+      longestSentence: sorted.length ? { length: sorted[sorted.length - 1].length, text: sorted[sorted.length - 1].text.substring(0, 200) } : null,
+      shortestSentence: sorted.length ? { length: sorted[0].length, text: sorted[0].text.substring(0, 200) } : null
+    },
+    distribution,
+    suggestions
+  };
+}
+
+
+// --- Text Correction System Prompt (DE Reference) ---
+
+const TEXT_CORRECT_PROMPT_VERSION = '1.0.0';
+
+function buildTextCorrectSystemPrompt(config) {
+  const { variant = 'de-DE', register = 'neutral', genderOption = 'G0', outputMode = 'O2', strictness = 'medium' } = config;
+  
+  return `ROLLE
+Du bist Senior Editor (20+ Jahre) für Deutsch. Du arbeitest präzise, normorientiert, nachvollziehbar.
+Du bewahrst Sinn, Logik und Stimme. Du erfindest keine Fakten und ergänzt keine Inhalte,
+außer minimal zur Grammatik/Kohäsion, wenn zwingend nötig.
+
+SCOPE (EDIT-LEVEL)
+Wähle anhand der Konfiguration den Leistungsumfang:
+L0 PROOFREAD: Orthografie, Grammatik, Zeichensetzung, Typografie, grobe Konsistenz.
+L1 PROOFREAD+KLARHEIT: + Redundanzen entfernen, kleine Glättungen ohne Umstellungen.
+L2 LINE EDIT: + Satzbau-Optimierung, Schachtelsätze auflösen, Übergänge (minimal-invasiv).
+L3 COPYEDIT: + Terminologie/Style Sheet/Cross-References; Strukturvorschläge NUR als OPTION.
+
+KONFIGURATION
+- Sprachvariante: ${variant}
+- Register: ${register}
+- Gender-Option: ${genderOption}
+- Änderungsmodus: ${outputMode}
+- Strenge: ${strictness}
+
+NORMBASIS
+- Primär: Amtliches Regelwerk der deutschen Rechtschreibung (Fassung 2024).
+- Sekundär: Duden bei Zweifelsfällen.
+- de-CH: kein ß, verwende ss.
+
+NICHT VERHANDELBAR
+1) Keine neuen Fakten. Keine stillen Inhaltsänderungen.
+2) Unklare/falsche Fakten: als Query markieren, nicht "korrigieren".
+3) Einmal entschiedene Varianten konsequent durchziehen (Style Sheet).
+4) Keine Regression: keine neuen Fehler einführen.
+
+DEUTSCH-SPEZIFISCHE CHECKS
+A: ß/ss/ẞ korrekt gemäß Variante; Fremdwörter konsistent.
+B: Groß-/Kleinschreibung (Substantivierungen, Überschriften, Anrede).
+C: Getrennt-/Zusammenschreibung & Komposita nach Bedeutung.
+D: Bindestrich (Pflichtfälle mit Ziffern/Abk.) / Gedankenstrich korrekt.
+E: Komma-System (Nebensätze, Infinitivgruppen, Zusätze, paarige Kommas).
+F: Anführungszeichen „…" / ‚…' (de-CH: «…»/‹…›), Trägersatz-Regeln.
+G: Genderzeichen gemäß Option, konsistent, ohne Leerzeichen im Wortinneren.
+H: Konsistenz (Terminologie, Zahlen/Daten, Cross-References).
+
+ARBEITSABLAUF
+1) Vollständiges Lesen: Zweck, Ton, Zielgruppe.
+2) Mini-Style Sheet erzeugen (Variante, Anrede, Gender, Zahlen/Daten, Terminologie).
+3) Edit gemäß Level.
+4) Konsistenz-Pass gegen Style Sheet.
+5) Final QA: Sinn unverändert? Keine neuen Fakten? Keine neuen Fehler?
+
+OUTPUT
+Antworte AUSSCHLIESSLICH mit validem JSON (kein Markdown, keine Erklärungen außerhalb des JSON). Struktur:
+{
+  "executiveSummary": "3-6 Sätze zu Zweck, Register, Level, Hauptbaustellen",
+  "styleSheet": {
+    "variant": "${variant}",
+    "address": "Sie/du (erkannt aus Text)",
+    "gender": "${genderOption}",
+    "numbers": "Regel für Zahlen",
+    "quotes": "Anführungszeichen-Stil",
+    "terminology": {}
+  },
+  "correctedText": "vollständige überarbeitete Fassung",
+  ${outputMode !== 'O1' ? '"markedChanges": "~~alt~~ **neu** Format",' : ''}
+  "corrections": [
+    {
+      "offset": 0,
+      "length": 0,
+      "original": "...",
+      "replacement": "...",
+      "category": "spelling|grammar|punctuation|style|gender|consistency",
+      "severity": "critical|medium|minor",
+      "rule": "Regelname",
+      "message": "Erklärung"
+    }
+  ],
+  ${outputMode === 'O3' ? '"queries": ["Nummerierte Rückfragen bei Fakten/Unklarheiten"],' : ''}
+  "patterns": [
+    {
+      "pattern": "Fehlermuster",
+      "frequency": 1,
+      "tip": "Lernhinweis"
+    }
+  ]
+}`;
+}
+
+
+// --- LanguageTool Integration ---
+
+async function callLanguageTool(text, language) {
+  const ltLang = language || 'de-DE';
+  const params = new URLSearchParams({
+    text: text,
+    language: ltLang,
+    enabledOnly: 'false'
+  });
+
+  try {
+    const response = await fetch('https://api.languagetool.org/v2/check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: params.toString()
+    });
+
+    if (response.status === 429) {
+      console.warn('LanguageTool rate limit reached');
+      return null;
+    }
+
+    if (!response.ok) {
+      console.error('LanguageTool error:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error('LanguageTool request failed:', error.message);
+    return null;
+  }
+}
+
+function mapLanguageToolMatches(ltResult) {
+  if (!ltResult || !ltResult.matches) return [];
+  
+  return ltResult.matches.map(match => {
+    let category = 'grammar';
+    const ruleCategory = (match.rule && match.rule.category && match.rule.category.id) || '';
+    
+    if (ruleCategory.includes('TYPOS') || ruleCategory.includes('SPELL')) category = 'spelling';
+    else if (ruleCategory.includes('PUNCTUATION') || ruleCategory.includes('COMMA')) category = 'punctuation';
+    else if (ruleCategory.includes('STYLE') || ruleCategory.includes('REDUNDANCY')) category = 'style';
+    else if (ruleCategory.includes('GRAMMAR') || ruleCategory.includes('CASING')) category = 'grammar';
+    
+    let severity = 'medium';
+    if (category === 'spelling' || category === 'grammar') severity = 'critical';
+    if (category === 'style') severity = 'minor';
+    
+    return {
+      offset: match.offset,
+      length: match.length,
+      original: match.context ? match.context.text.substring(match.context.offset, match.context.offset + match.context.length) : '',
+      replacement: (match.replacements && match.replacements[0]) ? match.replacements[0].value : '',
+      category,
+      severity,
+      rule: (match.rule && match.rule.id) || 'UNKNOWN',
+      message: match.message || ''
+    };
+  });
+}
+
+// --- Unified v2 Error Helper ---
+
+function sendV2Error(res, statusCode, code, message, extra) {
+  res.status(statusCode).json({
+    success: false,
+    error: {
+      code,
+      message,
+      ...extra
+    }
+  });
+}
+
+// --- Input Validation ---
+
+const VALID_LEVELS = ['L0', 'L1', 'L2', 'L3'];
+const VALID_GENDER_OPTIONS = ['G0', 'G1', 'G2', 'G3'];
+const VALID_OUTPUT_MODES = ['O1', 'O2', 'O3'];
+const VALID_REGISTERS = ['business', 'wissenschaft', 'behördlich', 'marketing', 'kreativ', 'neutral'];
+const VALID_STRICTNESS = ['low', 'medium', 'high'];
+const VALID_VARIANTS = ['de-DE', 'de-AT', 'de-CH', 'en-US', 'en-GB', 'fr-FR', 'es-ES', 'it-IT'];
+const VALID_IMPROVE_MODES = ['formal', 'simple', 'shorter', 'professional', 'academic', 'creative'];
+
+const MAX_TEXT_CORRECT_LENGTH = 10000;
+const MAX_TEXT_IMPROVE_LENGTH = 5000;
+const MAX_READABILITY_LENGTH = 50000;
+
+
+// ===========================================
+// POST /api/v2/text-correct
+// ===========================================
+
+app.post('/api/v2/text-correct', textCorrectLimiter, async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { text, language = 'de-DE', level = 'L1', config = {} } = req.body;
+    
+    // Input validation
+    if (!text || text.trim().length === 0) {
+      return sendV2Error(res, 400, 'INVALID_INPUT', 'Kein Text zur Korrektur angegeben.');
+    }
+    
+    if (text.length > MAX_TEXT_CORRECT_LENGTH) {
+      return sendV2Error(res, 400, 'TEXT_TOO_LONG', `Text darf maximal ${MAX_TEXT_CORRECT_LENGTH} Zeichen lang sein.`);
+    }
+    
+    if (!VALID_LEVELS.includes(level)) {
+      return sendV2Error(res, 400, 'INVALID_LEVEL', `Ungültiges Level. Erlaubt: ${VALID_LEVELS.join(', ')}`);
+    }
+    
+    const {
+      variant = language,
+      register = 'neutral',
+      genderOption = 'G0',
+      strictness = 'medium',
+      outputMode = 'O2'
+    } = config;
+    
+    if (!VALID_VARIANTS.includes(variant)) {
+      return sendV2Error(res, 400, 'INVALID_VARIANT', `Ungültige Sprachvariante. Erlaubt: ${VALID_VARIANTS.join(', ')}`);
+    }
+    
+    // Step 1: Call LanguageTool for base analysis
+    const ltResult = await callLanguageTool(text, language);
+    const ltCorrections = mapLanguageToolMatches(ltResult);
+    
+    // Step 2: Calculate readability
+    const readability = computeReadability(text, language);
+    
+    // Step 3: For L0, return LanguageTool results directly (no AI)
+    if (level === 'L0') {
+      // Build corrected text from LanguageTool suggestions
+      let correctedText = text;
+      const sortedCorrections = [...ltCorrections].sort((a, b) => b.offset - a.offset);
+      for (const c of sortedCorrections) {
+        if (c.replacement) {
+          correctedText = correctedText.substring(0, c.offset) + c.replacement + correctedText.substring(c.offset + c.length);
+        }
+      }
+      
+      // Build marked changes
+      let markedChanges = '';
+      if (outputMode !== 'O1') {
+        markedChanges = text;
+        const sortedForMarking = [...ltCorrections].sort((a, b) => b.offset - a.offset);
+        for (const c of sortedForMarking) {
+          if (c.replacement && c.original) {
+            markedChanges = markedChanges.substring(0, c.offset) + '~~' + c.original + '~~ **' + c.replacement + '**' + markedChanges.substring(c.offset + c.length);
+          }
+        }
+      }
+      
+      // Stats
+      const stats = { total: ltCorrections.length, spelling: 0, grammar: 0, punctuation: 0, style: 0, gender: 0, consistency: 0 };
+      ltCorrections.forEach(c => { if (stats[c.category] !== undefined) stats[c.category]++; });
+      
+      return res.json({
+        success: true,
+        language,
+        level,
+        executiveSummary: `Proofread-Analyse (L0) mit ${ltCorrections.length} Befund(en). Rein regelbasierte Prüfung über LanguageTool.`,
+        styleSheet: { variant, address: 'nicht ermittelt (L0)', gender: genderOption, numbers: 'Standard', quotes: variant === 'de-CH' ? '«…»' : '„…"', terminology: {} },
+        originalText: text,
+        correctedText,
+        ...(outputMode !== 'O1' && { markedChanges }),
+        corrections: ltCorrections,
+        stats,
+        readability: {
+          fleschDE: readability.scores.fleschDE,
+          wienerSachtextformel: readability.scores.wienerSachtextformel,
+          cefr: readability.scores.cefr,
+          avgSentenceLength: readability.statistics.avgSentenceLength,
+          avgWordLength: readability.statistics.avgWordLength,
+          wordCount: readability.statistics.words,
+          sentenceCount: readability.statistics.sentences,
+          paragraphCount: readability.statistics.paragraphs
+        },
+        patterns: [],
+        queries: [],
+        meta: {
+          processingTime: Date.now() - startTime,
+          provider: 'languagetool',
+          promptVersion: TEXT_CORRECT_PROMPT_VERSION
+        }
+      });
+    }
+    
+    // Step 4: For L1-L3, use AI with LanguageTool pre-analysis
+    const systemPrompt = buildTextCorrectSystemPrompt({ variant, register, genderOption, outputMode, strictness });
+    
+    let userPrompt = `EDIT-LEVEL: ${level}\n\n`;
+    if (ltCorrections.length > 0) {
+      userPrompt += `VORANALYSE (LanguageTool, ${ltCorrections.length} Befunde):\n`;
+      ltCorrections.slice(0, 20).forEach((c, i) => {
+        userPrompt += `${i + 1}. [${c.category}] "${c.original}" → "${c.replacement}" (${c.rule})\n`;
+      });
+      userPrompt += '\n';
+    }
+    userPrompt += `TEXT:\n${text}`;
+    
+    const aiResponse = await callAIWithFallback([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], { temperature: 0.2, max_tokens: 4000 });
+    
+    // Parse AI response
+    let result;
+    try {
+      result = JSON.parse(aiResponse.content);
+    } catch {
+      const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        result = JSON.parse(jsonMatch[0]);
+      } else {
+        return sendV2Error(res, 500, 'AI_PARSE_ERROR', 'AI-Antwort konnte nicht als JSON geparst werden.');
+      }
+    }
+    
+    // Compute stats from corrections
+    const corrections = result.corrections || [];
+    const stats = { total: corrections.length, spelling: 0, grammar: 0, punctuation: 0, style: 0, gender: 0, consistency: 0 };
+    corrections.forEach(c => { if (stats[c.category] !== undefined) stats[c.category]++; });
+    
+    res.json({
+      success: true,
+      language,
+      level,
+      executiveSummary: result.executiveSummary || '',
+      styleSheet: result.styleSheet || { variant, gender: genderOption },
+      originalText: text,
+      correctedText: result.correctedText || text,
+      ...(outputMode !== 'O1' && { markedChanges: result.markedChanges || '' }),
+      corrections,
+      stats,
+      readability: {
+        fleschDE: readability.scores.fleschDE,
+        wienerSachtextformel: readability.scores.wienerSachtextformel,
+        cefr: readability.scores.cefr,
+        avgSentenceLength: readability.statistics.avgSentenceLength,
+        avgWordLength: readability.statistics.avgWordLength,
+        wordCount: readability.statistics.words,
+        sentenceCount: readability.statistics.sentences,
+        paragraphCount: readability.statistics.paragraphs
+      },
+      patterns: result.patterns || [],
+      queries: result.queries || [],
+      meta: {
+        processingTime: Date.now() - startTime,
+        provider: 'languagetool+ai',
+        aiProvider: aiResponse.provider,
+        aiModel: aiResponse.model,
+        promptVersion: TEXT_CORRECT_PROMPT_VERSION
+      }
+    });
+    
+  } catch (error) {
+    console.error('API v2 text-correct Fehler:', error);
+    sendV2Error(res, 500, 'INTERNAL_ERROR', 'Textkorrektur fehlgeschlagen.', { details: error.message });
+  }
+});
+
+
+// ===========================================
+// POST /api/v2/text-improve
+// ===========================================
+
+const TEXT_IMPROVE_PROMPTS = {
+  formal: 'Formuliere den Text formeller und professioneller. Erhalte den Inhalt vollständig, aber verwende gehobene Sprache, korrekte Anrede und professionellen Stil.',
+  simple: 'Vereinfache den Text auf Sprachniveau A2/B1. Verwende kurze Sätze, einfache Wörter, vermeide Fachbegriffe oder erkläre sie. Der Inhalt muss vollständig erhalten bleiben.',
+  shorter: 'Kürze den Text so weit wie möglich, ohne Inhalt zu verlieren. Entferne Füllwörter, Redundanzen und Nominalisierungen. Jeder Satz muss einen klaren Informationswert haben.',
+  professional: 'Optimiere den Text für den Geschäftskontext. Verwende klare, professionelle Sprache. Entferne Umgangssprache und unpassende Formulierungen.',
+  academic: 'Formuliere den Text in wissenschaftlichem Stil. Verwende Fachterminologie korrekt, passive Konstruktionen wo angemessen, und präzise Quellenverweise.',
+  creative: 'Mache den Text lebendiger und bildhafter. Verwende aktive Verben, anschauliche Metaphern und abwechslungsreichen Satzbau. Erhalte den Inhalt vollständig.'
+};
+
+app.post('/api/v2/text-improve', textImproveLimiter, async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { text, language = 'de-DE', mode = 'shorter', config = {} } = req.body;
+    
+    if (!text || text.trim().length === 0) {
+      return sendV2Error(res, 400, 'INVALID_INPUT', 'Kein Text zur Verbesserung angegeben.');
+    }
+    
+    if (text.length > MAX_TEXT_IMPROVE_LENGTH) {
+      return sendV2Error(res, 400, 'TEXT_TOO_LONG', `Text darf maximal ${MAX_TEXT_IMPROVE_LENGTH} Zeichen lang sein.`);
+    }
+    
+    if (!VALID_IMPROVE_MODES.includes(mode)) {
+      return sendV2Error(res, 400, 'INVALID_MODE', `Ungültiger Modus. Erlaubt: ${VALID_IMPROVE_MODES.join(', ')}`);
+    }
+    
+    const { register = 'neutral', preserveTerminology = false } = config;
+    
+    const readabilityBefore = computeReadability(text, language);
+    
+    const systemPrompt = `Du bist ein erfahrener Lektor für ${language.startsWith('de') ? 'deutsche' : 'englische'} Texte.
+
+${TEXT_IMPROVE_PROMPTS[mode]}
+
+${preserveTerminology ? 'WICHTIG: Bewahre alle Fachbegriffe und Eigennamen exakt wie im Original.' : ''}
+Register: ${register}
+
+Antworte AUSSCHLIESSLICH mit validem JSON:
+{
+  "improvedText": "Der verbesserte Text",
+  "changes": [
+    {
+      "type": "simplification|formalization|condensation|restructuring|enrichment",
+      "original": "Originalpassage",
+      "replacement": "Neue Formulierung",
+      "reason": "Begründung"
+    }
+  ]
+}`;
+
+    const aiResponse = await callAIWithFallback([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: text }
+    ], { temperature: 0.4, max_tokens: 3000 });
+    
+    let result;
+    try {
+      result = JSON.parse(aiResponse.content);
+    } catch {
+      const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        result = JSON.parse(jsonMatch[0]);
+      } else {
+        result = { improvedText: aiResponse.content, changes: [] };
+      }
+    }
+    
+    const readabilityAfter = computeReadability(result.improvedText || text, language);
+    
+    res.json({
+      success: true,
+      mode,
+      originalText: text,
+      improvedText: result.improvedText || text,
+      changes: result.changes || [],
+      readabilityBefore: {
+        fleschDE: readabilityBefore.scores.fleschDE,
+        cefr: readabilityBefore.scores.cefr
+      },
+      readabilityAfter: {
+        fleschDE: readabilityAfter.scores.fleschDE,
+        cefr: readabilityAfter.scores.cefr
+      },
+      wordCountBefore: readabilityBefore.statistics.words,
+      wordCountAfter: readabilityAfter.statistics.words,
+      meta: {
+        processingTime: Date.now() - startTime,
+        provider: aiResponse.provider,
+        model: aiResponse.model
+      }
+    });
+    
+  } catch (error) {
+    console.error('API v2 text-improve Fehler:', error);
+    sendV2Error(res, 500, 'INTERNAL_ERROR', 'Textverbesserung fehlgeschlagen.', { details: error.message });
+  }
+});
+
+// ===========================================
+// POST /api/v2/readability
+// ===========================================
+
+app.post('/api/v2/readability', textCorrectLimiter, async (req, res) => {
+  const startTime = Date.now();
+  
+  try {
+    const { text, language = 'de-DE' } = req.body;
+    
+    if (!text || text.trim().length === 0) {
+      return sendV2Error(res, 400, 'INVALID_INPUT', 'Kein Text zur Analyse angegeben.');
+    }
+    
+    if (text.length > MAX_READABILITY_LENGTH) {
+      return sendV2Error(res, 400, 'TEXT_TOO_LONG', `Text darf maximal ${MAX_READABILITY_LENGTH} Zeichen lang sein.`);
+    }
+    
+    const result = computeReadability(text, language);
+    
+    res.json({
+      success: true,
+      language,
+      scores: result.scores,
+      statistics: result.statistics,
+      distribution: result.distribution,
+      suggestions: result.suggestions,
+      meta: {
+        processingTime: Date.now() - startTime
+      }
+    });
+    
+  } catch (error) {
+    console.error('API v2 readability Fehler:', error);
+    sendV2Error(res, 500, 'INTERNAL_ERROR', 'Lesbarkeitsanalyse fehlgeschlagen.', { details: error.message });
+  }
+});
+
 
 // Server starten
 app.listen(PORT, () => {
