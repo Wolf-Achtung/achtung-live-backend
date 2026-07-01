@@ -17,6 +17,10 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
+// Modell-IDs per ENV konfigurierbar (Default = aktuell verwendete Modelle)
+const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-3-haiku-20240307';
+
 // Anthropic Client (for fallback)
 let anthropic = null;
 try {
@@ -313,6 +317,43 @@ app.use(cors({
   allowedHeaders: ['Content-Type']
 }));
 app.use(express.json({ limit: '100kb' }));
+
+// Security-Headers (kein CSP, da reine JSON-API ohne HTML/Inline-Scripts)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  next();
+});
+
+// Rate Limiter für LLM-Endpunkte (jeder Aufruf kostet einen OpenAI/Anthropic-Request)
+const llmLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Zu viele Anfragen. Bitte warte kurz und versuche es erneut.',
+      retryAfter: 30
+    });
+  }
+});
+
+// Batch-Endpunkt kann bis zu 20 Texte pro Request an bis zu 10 parallele LLM-Calls schicken,
+// daher deutlich strengeres Limit als die Einzel-Analyse-Endpunkte.
+const batchLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Zu viele Batch-Anfragen. Bitte warte kurz und versuche es erneut.',
+      retryAfter: 60
+    });
+  }
+});
 
 // Rate Limiters for text-correction endpoints
 const textCorrectLimiter = rateLimit({
@@ -5775,6 +5816,8 @@ Antworte NUR mit dem umgeschriebenen Text, ohne Erklärungen.`;
 // Health Check
 app.get('/', (req, res) => {
   res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
     status: 'ok',
     service: 'achtung.live API',
     version: '14.0.0',
@@ -5803,18 +5846,20 @@ app.get('/', (req, res) => {
 });
 
 // Analyse-Endpunkt
-app.post('/analyze', async (req, res) => {
+app.post('/analyze', llmLimiter, async (req, res) => {
   try {
     const { text } = req.body;
 
     if (!text || text.trim().length === 0) {
       return res.status(400).json({
+        success: false,
+        timestamp: new Date().toISOString(),
         error: 'Kein Text zum Analysieren angegeben'
       });
     }
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: OPENAI_MODEL,
       messages: [
         { role: 'system', content: ANALYZE_SYSTEM_PROMPT },
         { role: 'user', content: text }
@@ -5845,11 +5890,13 @@ app.post('/analyze', async (req, res) => {
       }
     }
 
-    res.json(result);
+    res.json({ success: true, timestamp: new Date().toISOString(), ...result });
 
   } catch (error) {
     console.error('Analyse-Fehler:', error);
     res.status(500).json({
+      success: false,
+      timestamp: new Date().toISOString(),
       error: 'Analyse fehlgeschlagen',
       details: error.message
     });
@@ -5857,18 +5904,20 @@ app.post('/analyze', async (req, res) => {
 });
 
 // Rewrite-Endpunkt
-app.post('/rewrite', async (req, res) => {
+app.post('/rewrite', llmLimiter, async (req, res) => {
   try {
     const { text } = req.body;
 
     if (!text || text.trim().length === 0) {
       return res.status(400).json({
+        success: false,
+        timestamp: new Date().toISOString(),
         error: 'Kein Text zum Umschreiben angegeben'
       });
     }
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: OPENAI_MODEL,
       messages: [
         { role: 'system', content: REWRITE_SYSTEM_PROMPT },
         { role: 'user', content: text }
@@ -5878,11 +5927,13 @@ app.post('/rewrite', async (req, res) => {
     });
 
     const rewritten = completion.choices[0].message.content;
-    res.json({ rewritten });
+    res.json({ success: true, timestamp: new Date().toISOString(), rewritten });
 
   } catch (error) {
     console.error('Rewrite-Fehler:', error);
     res.status(500).json({
+      success: false,
+      timestamp: new Date().toISOString(),
       error: 'Umschreiben fehlgeschlagen',
       details: error.message
     });
@@ -6357,7 +6408,7 @@ function simulateCorrelationAttacks(findings) {
 }
 
 // API v2: Analyze endpoint
-app.post('/api/v2/analyze', async (req, res) => {
+app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
   try {
     const { text, context = 'default', lang: requestLang, options = {} } = req.body;
     const includeRewrite = options.includeRewrite === true;
@@ -6368,6 +6419,8 @@ app.post('/api/v2/analyze', async (req, res) => {
 
     if (!text || text.trim().length === 0) {
       return res.status(400).json({
+        success: false,
+        timestamp: new Date().toISOString(),
         error: lang === 'en' ? 'No text provided for analysis' :
                lang === 'fr' ? 'Aucun texte fourni pour l\'analyse' :
                lang === 'es' ? 'No se proporcionó texto para analizar' :
@@ -6385,6 +6438,8 @@ app.post('/api/v2/analyze', async (req, res) => {
 
       if (cached) {
         return res.json({
+          success: true,
+          timestamp: new Date().toISOString(),
           ...cached,
           meta: {
             ...cached.meta,
@@ -6427,7 +6482,7 @@ app.post('/api/v2/analyze', async (req, res) => {
       // Cache the result
       setCache(cacheKey, result);
 
-      return res.json(result);
+      return res.json({ success: true, timestamp: new Date().toISOString(), ...result });
     }
 
     // Full Analysis Mode: Regex + LLM
@@ -6442,7 +6497,7 @@ app.post('/api/v2/analyze', async (req, res) => {
       const userPrompt = `Kontext: ${context}\nText: "${text}"`;
 
       const completion = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: OPENAI_MODEL,
         messages: [
           { role: 'system', content: ANALYZE_V2_SYSTEM_PROMPT },
           { role: 'user', content: userPrompt }
@@ -6557,7 +6612,7 @@ app.post('/api/v2/analyze', async (req, res) => {
         // Generate rewrite using dedicated endpoint logic
         try {
           const rewriteCompletion = await openai.chat.completions.create({
-            model: 'gpt-4o-mini',
+            model: OPENAI_MODEL,
             messages: [
               { role: 'system', content: REWRITE_SYSTEM_PROMPT },
               { role: 'user', content: text }
@@ -6598,11 +6653,13 @@ app.post('/api/v2/analyze', async (req, res) => {
       }
     }
 
-    res.json(response);
+    res.json({ success: true, timestamp: new Date().toISOString(), ...response });
 
   } catch (error) {
     console.error('API v2 Analyse-Fehler:', error);
     res.status(500).json({
+      success: false,
+      timestamp: new Date().toISOString(),
       error: 'Analyse fehlgeschlagen',
       details: error.message
     });
@@ -6617,7 +6674,7 @@ app.post('/api/v2/analyze', async (req, res) => {
 async function callAIWithFallback(messages, options = {}) {
   const { temperature = 0.3, max_tokens = 1500 } = options;
   let provider = 'openai';
-  let model = 'gpt-4o-mini';
+  let model = OPENAI_MODEL;
 
   try {
     // Try OpenAI first
@@ -6646,7 +6703,7 @@ async function callAIWithFallback(messages, options = {}) {
     if (anthropic) {
       try {
         provider = 'anthropic';
-        model = 'claude-3-haiku-20240307';
+        model = ANTHROPIC_MODEL;
 
         // Convert messages format for Anthropic
         const systemMessage = messages.find(m => m.role === 'system')?.content || '';
@@ -6712,6 +6769,8 @@ app.get('/api/v2/categories', (req, res) => {
   }
 
   res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
     totalPatterns: Object.keys(PATTERNS).length,
     totalGroups: Object.keys(CATEGORY_GROUPS).length,
     categories
@@ -6733,14 +6792,14 @@ app.get('/api/v2/health', (req, res) => {
     providers: {
       openai: {
         available: providerStatus.openai.available,
-        model: 'gpt-4o-mini',
+        model: OPENAI_MODEL,
         lastCheck: new Date(providerStatus.openai.lastCheck).toISOString(),
         lastError: providerStatus.openai.lastError
       },
       anthropic: {
         configured: !!anthropic,
         available: providerStatus.anthropic.available,
-        model: 'claude-3-haiku-20240307',
+        model: ANTHROPIC_MODEL,
         lastCheck: new Date(providerStatus.anthropic.lastCheck).toISOString(),
         lastError: providerStatus.anthropic.lastError
       }
@@ -6901,6 +6960,8 @@ app.get('/api/v2/patterns', (req, res) => {
   });
 
   res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
     version: '10.0',
     patternCount: patterns.length,
     bySeverity,
@@ -6916,6 +6977,8 @@ app.get('/api/v2/patterns', (req, res) => {
 // GET /api/v2/languages - List available languages
 app.get('/api/v2/languages', (req, res) => {
   res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
     available: SUPPORTED_LANGUAGES,
     default: DEFAULT_LANGUAGE,
     labels: {
@@ -7015,7 +7078,7 @@ Antworte mit JSON:
 };
 
 // POST /api/v2/rewrite - Smart rewrite with modes
-app.post('/api/v2/rewrite', async (req, res) => {
+app.post('/api/v2/rewrite', llmLimiter, async (req, res) => {
   try {
     const { text, mode = 'anonymize', context = 'default' } = req.body;
 
@@ -7078,18 +7141,22 @@ app.post('/api/v2/rewrite', async (req, res) => {
 });
 
 // POST /api/v2/analyze/batch - Batch analysis with parallel processing
-app.post('/api/v2/analyze/batch', async (req, res) => {
+app.post('/api/v2/analyze/batch', batchLimiter, async (req, res) => {
   try {
     const { texts, context = 'default', options = {} } = req.body;
 
     if (!texts || !Array.isArray(texts) || texts.length === 0) {
       return res.status(400).json({
+        success: false,
+        timestamp: new Date().toISOString(),
         error: 'Keine Texte zum Analysieren angegeben. Erwartet: { texts: [...] }'
       });
     }
 
     if (texts.length > 20) {
       return res.status(400).json({
+        success: false,
+        timestamp: new Date().toISOString(),
         error: 'Maximal 20 Texte pro Batch erlaubt'
       });
     }
@@ -7192,6 +7259,8 @@ app.post('/api/v2/analyze/batch', async (req, res) => {
     };
 
     res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
       processed: texts.length,
       successful: successfulResults.length,
       failed: results.filter(r => r.error).length,
@@ -7207,6 +7276,8 @@ app.post('/api/v2/analyze/batch', async (req, res) => {
   } catch (error) {
     console.error('API v2 Batch-Fehler:', error);
     res.status(500).json({
+      success: false,
+      timestamp: new Date().toISOString(),
       error: 'Batch-Analyse fehlgeschlagen',
       details: error.message
     });
@@ -7218,7 +7289,7 @@ app.post('/api/v2/analyze/batch', async (req, res) => {
 // ===========================================
 
 // POST /api/v2/analyze/predictive - Predictive Privacy Analysis
-app.post('/api/v2/analyze/predictive', async (req, res) => {
+app.post('/api/v2/analyze/predictive', llmLimiter, async (req, res) => {
   try {
     const { text, context = 'default', lang: requestLang, options = {} } = req.body;
 
@@ -8121,7 +8192,9 @@ app.get('/api/v2/footprint/databrokers', (req, res) => {
 
 // GET /api/v2/footprint/breach-database - Breach database
 app.get('/api/v2/footprint/breach-database', (req, res) => {
-  const { search, year, severity, limit = 50 } = req.query;
+  const { search, year, severity, limit = 50, offset = 0 } = req.query;
+  const parsedLimit = Math.max(0, parseInt(limit, 10) || 0);
+  const parsedOffset = Math.max(0, parseInt(offset, 10) || 0);
 
   let filtered = BREACH_DATABASE;
 
@@ -8162,9 +8235,10 @@ app.get('/api/v2/footprint/breach-database', (req, res) => {
 
   res.json({
     success: true,
+    timestamp: new Date().toISOString(),
     totalBreaches: BREACH_DATABASE.length,
     filteredCount: filtered.length,
-    breaches: filtered.slice(0, parseInt(limit)).map(b => ({
+    breaches: filtered.slice(parsedOffset, parsedOffset + parsedLimit).map(b => ({
       id: b.id,
       name: b.name,
       domain: b.domain,
