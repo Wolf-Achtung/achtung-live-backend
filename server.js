@@ -4,6 +4,7 @@
  */
 
 require('dotenv').config();
+const crypto = require('crypto');
 const express = require('express');
 const cors = require('cors');
 const OpenAI = require('openai');
@@ -350,6 +351,34 @@ const batchLimiter = rateLimit({
   handler: (req, res) => {
     res.status(429).json({
       error: 'Zu viele Batch-Anfragen. Bitte warte kurz und versuche es erneut.',
+      retryAfter: 60
+    });
+  }
+});
+
+// Rate limiters for endpoints that write into unbounded in-memory stores
+const subscribeLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      success: false,
+      error: 'Zu viele Anfragen. Bitte warte kurz und versuche es erneut.',
+      retryAfter: 60
+    });
+  }
+});
+
+const optoutLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (req, res) => {
+    res.status(429).json({
+      error: 'Zu viele Anfragen. Bitte warte kurz und versuche es erneut.',
       retryAfter: 60
     });
   }
@@ -3456,6 +3485,25 @@ const alertSubscriptions = new Map(); // email -> subscription data
 const verificationTokens = new Map(); // token -> { email, expires, type }
 const alertHistory = new Map(); // email -> [{ breachId, notifiedAt, ... }]
 
+const MAX_ALERT_SUBSCRIPTIONS = 5000;
+const UNVERIFIED_SUBSCRIPTION_TTL = 48 * 60 * 60 * 1000; // 48h
+
+// Periodic cleanup: drop expired verification tokens and stale unverified
+// subscriptions, since neither is bounded/swept anywhere else.
+setInterval(() => {
+  const now = Date.now();
+  for (const [token, data] of verificationTokens.entries()) {
+    if (data.expires && now > data.expires) {
+      verificationTokens.delete(token);
+    }
+  }
+  for (const [email, sub] of alertSubscriptions.entries()) {
+    if (!sub.verified && now - new Date(sub.createdAt).getTime() > UNVERIFIED_SUBSCRIPTION_TTL) {
+      alertSubscriptions.delete(email);
+    }
+  }
+}, 60 * 60 * 1000); // hourly
+
 // Alert subscription preferences
 const DEFAULT_ALERT_PREFERENCES = {
   emailNotifications: true,
@@ -3477,12 +3525,7 @@ const BREACH_SEVERITY = {
 
 // Helper: Generate secure verification token
 function generateVerificationToken() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let token = '';
-  for (let i = 0; i < 32; i++) {
-    token += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return token;
+  return crypto.randomBytes(24).toString('base64url');
 }
 
 // Helper: Calculate breach severity based on data types
@@ -5943,6 +5986,8 @@ app.post('/rewrite', llmLimiter, async (req, res) => {
 // Howto-Endpunkt
 app.get('/howto', (req, res) => {
   res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
     howto: `So schützt du deine Daten richtig:
 
 1. IBAN & Kreditkarten
@@ -6785,6 +6830,7 @@ app.get('/api/v2/health', (req, res) => {
     : '0%';
 
   res.json({
+    success: true,
     status: 'ok',
     service: 'achtung.live API',
     version: '14.0.0',
@@ -6994,8 +7040,9 @@ app.get('/api/v2/languages', (req, res) => {
 // GET /api/v2/ping - Minimal health check for PWA offline detection
 app.get('/api/v2/ping', (req, res) => {
   res.json({
+    success: true,
     status: 'ok',
-    timestamp: Date.now()
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -7018,6 +7065,8 @@ app.get('/api/v2/patterns/offline', (req, res) => {
   }
 
   res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
     version: '14.0.0',
     lang,
     lastUpdated: new Date().toISOString(),
@@ -7537,6 +7586,8 @@ app.get('/api/v2/risk-factors', (req, res) => {
   }
 
   res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
     totalFactors: factors.length,
     categories: Object.keys(byCategory),
     byCategory,
@@ -7547,6 +7598,8 @@ app.get('/api/v2/risk-factors', (req, res) => {
 // GET /api/v2/breach-scenarios - List all breach scenarios
 app.get('/api/v2/breach-scenarios', (req, res) => {
   res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
     totalScenarios: BREACH_SCENARIOS.length,
     scenarios: BREACH_SCENARIOS.map(s => ({
       id: s.id,
@@ -7564,6 +7617,8 @@ app.get('/api/v2/breach-scenarios', (req, res) => {
 // GET /api/v2/correlation-methods - List all correlation attack methods
 app.get('/api/v2/correlation-methods', (req, res) => {
   res.json({
+    success: true,
+    timestamp: new Date().toISOString(),
     totalMethods: CORRELATION_METHODS.length,
     methods: CORRELATION_METHODS.map(m => ({
       id: m.id,
@@ -7583,7 +7638,7 @@ app.get('/api/v2/correlation-methods', (req, res) => {
 
 // Helper: Generate unique scan ID
 function generateScanId() {
-  return 'scan_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 9);
+  return 'scan_' + Date.now().toString(36) + crypto.randomBytes(8).toString('hex');
 }
 
 // Helper: Mask email for privacy
@@ -7738,6 +7793,17 @@ function calculateFootprintRisk(breaches, socialProfiles, dataBrokers) {
 
 // In-memory opt-out request storage (would use database in production)
 const optOutRequests = new Map();
+const MAX_OPTOUT_REQUESTS = 5000;
+const OPTOUT_REQUEST_TTL = 90 * 24 * 60 * 60 * 1000; // 90 days
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, request] of optOutRequests.entries()) {
+    if (now - new Date(request.submittedAt).getTime() > OPTOUT_REQUEST_TTL) {
+      optOutRequests.delete(id);
+    }
+  }
+}, 60 * 60 * 1000); // hourly
 
 // POST /api/v2/footprint/scan - Full footprint scan
 app.post('/api/v2/footprint/scan', async (req, res) => {
@@ -8032,13 +8098,19 @@ app.post('/api/v2/footprint/databroker-scan', (req, res) => {
 });
 
 // POST /api/v2/footprint/optout-request - Initiate opt-out request
-app.post('/api/v2/footprint/optout-request', (req, res) => {
+app.post('/api/v2/footprint/optout-request', optoutLimiter, (req, res) => {
   try {
     const { broker, userData, method = 'automated' } = req.body;
 
     if (!broker || !userData || !userData.email) {
       return res.status(400).json({
         error: 'Broker und User-Daten (inkl. Email) erforderlich'
+      });
+    }
+
+    if (optOutRequests.size >= MAX_OPTOUT_REQUESTS) {
+      return res.status(503).json({
+        error: 'Dienst vorübergehend ausgelastet. Bitte versuche es später erneut.'
       });
     }
 
@@ -8057,7 +8129,7 @@ app.post('/api/v2/footprint/optout-request', (req, res) => {
     }
 
     // Create opt-out request
-    const requestId = 'optout_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+    const requestId = 'optout_' + Date.now().toString(36) + crypto.randomBytes(6).toString('hex');
     const estimatedCompletion = new Date();
     estimatedCompletion.setDate(estimatedCompletion.getDate() + brokerInfo.optOut.estimatedDays);
 
@@ -8192,9 +8264,11 @@ app.get('/api/v2/footprint/databrokers', (req, res) => {
 
 // GET /api/v2/footprint/breach-database - Breach database
 app.get('/api/v2/footprint/breach-database', (req, res) => {
-  const { search, year, severity, limit = 50, offset = 0 } = req.query;
-  const parsedLimit = Math.max(0, parseInt(limit, 10) || 0);
-  const parsedOffset = Math.max(0, parseInt(offset, 10) || 0);
+  const { search, year, severity, limit, offset } = req.query;
+  const parsedLimitRaw = parseInt(limit, 10);
+  const parsedOffsetRaw = parseInt(offset, 10);
+  const parsedLimit = Math.max(0, Number.isNaN(parsedLimitRaw) ? 50 : parsedLimitRaw);
+  const parsedOffset = Math.max(0, Number.isNaN(parsedOffsetRaw) ? 0 : parsedOffsetRaw);
 
   let filtered = BREACH_DATABASE;
 
@@ -8270,7 +8344,7 @@ app.post('/api/v2/footprint/monitor', (req, res) => {
     });
   }
 
-  const monitorId = 'mon_' + Date.now().toString(36) + Math.random().toString(36).substr(2, 5);
+  const monitorId = 'mon_' + Date.now().toString(36) + crypto.randomBytes(6).toString('hex');
 
   res.json({
     success: true,
@@ -8936,13 +9010,20 @@ app.get('/api/v2/coach/quick-tips', (req, res) => {
 // ===========================================
 
 // POST /api/v2/alerts/subscribe - Subscribe to breach alerts
-app.post('/api/v2/alerts/subscribe', (req, res) => {
+app.post('/api/v2/alerts/subscribe', subscribeLimiter, (req, res) => {
   const { email, preferences = {} } = req.body;
 
   if (!email) {
     return res.status(400).json({
       success: false,
       error: 'E-Mail-Adresse ist erforderlich'
+    });
+  }
+
+  if (alertSubscriptions.size >= MAX_ALERT_SUBSCRIPTIONS && !alertSubscriptions.has(email)) {
+    return res.status(503).json({
+      success: false,
+      error: 'Dienst vorübergehend ausgelastet. Bitte versuche es später erneut.'
     });
   }
 
@@ -8969,7 +9050,7 @@ app.post('/api/v2/alerts/subscribe', (req, res) => {
 
   // Generate verification token
   const token = generateVerificationToken();
-  const subscriptionId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  const subscriptionId = `sub_${Date.now()}_${crypto.randomBytes(8).toString('hex')}`;
 
   // Store subscription (unverified)
   const subscription = {
@@ -9104,7 +9185,11 @@ app.get('/api/v2/alerts/status', (req, res) => {
 
 // GET /api/v2/alerts/recent-breaches - Get recent data breaches
 app.get('/api/v2/alerts/recent-breaches', (req, res) => {
-  const { limit = 10, category, severity, offset = 0 } = req.query;
+  const { limit, category, severity, offset } = req.query;
+  const parsedLimitRaw = parseInt(limit, 10);
+  const parsedOffsetRaw = parseInt(offset, 10);
+  const parsedLimit = Math.max(0, Number.isNaN(parsedLimitRaw) ? 10 : parsedLimitRaw);
+  const parsedOffset = Math.max(0, Number.isNaN(parsedOffsetRaw) ? 0 : parsedOffsetRaw);
   const email = req.query.email || req.headers['x-user-email'];
 
   let breaches = [...BREACH_DATABASE];
@@ -9127,7 +9212,7 @@ app.get('/api/v2/alerts/recent-breaches', (req, res) => {
 
   // Apply pagination
   const total = breaches.length;
-  const paginatedBreaches = breaches.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
+  const paginatedBreaches = breaches.slice(parsedOffset, parsedOffset + parsedLimit);
 
   // Format breaches with severity info
   const formattedBreaches = paginatedBreaches.map(breach => {
@@ -9171,9 +9256,9 @@ app.get('/api/v2/alerts/recent-breaches', (req, res) => {
     breaches: formattedBreaches,
     pagination: {
       total,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      hasMore: parseInt(offset) + parseInt(limit) < total
+      limit: parsedLimit,
+      offset: parsedOffset,
+      hasMore: parsedOffset + parsedLimit < total
     },
     statistics: stats
   });
@@ -9221,7 +9306,11 @@ app.delete('/api/v2/alerts/unsubscribe/:id', (req, res) => {
 // GET /api/v2/alerts/history/:email - Get notification history
 app.get('/api/v2/alerts/history/:email', (req, res) => {
   const { email } = req.params;
-  const { limit = 20, offset = 0 } = req.query;
+  const { limit, offset } = req.query;
+  const parsedLimitRaw = parseInt(limit, 10);
+  const parsedOffsetRaw = parseInt(offset, 10);
+  const parsedLimit = Math.max(0, Number.isNaN(parsedLimitRaw) ? 20 : parsedLimitRaw);
+  const parsedOffset = Math.max(0, Number.isNaN(parsedOffsetRaw) ? 0 : parsedOffsetRaw);
 
   // Validate email
   const subscription = alertSubscriptions.get(email);
@@ -9252,7 +9341,7 @@ app.get('/api/v2/alerts/history/:email', (req, res) => {
 
   // Pagination
   const total = notifications.length;
-  const paginatedNotifications = notifications.slice(parseInt(offset), parseInt(offset) + parseInt(limit));
+  const paginatedNotifications = notifications.slice(parsedOffset, parsedOffset + parsedLimit);
 
   res.json({
     success: true,
@@ -9261,9 +9350,9 @@ app.get('/api/v2/alerts/history/:email', (req, res) => {
     notifications: paginatedNotifications,
     pagination: {
       total,
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      hasMore: parseInt(offset) + parseInt(limit) < total
+      limit: parsedLimit,
+      offset: parsedOffset,
+      hasMore: parsedOffset + parsedLimit < total
     },
     summary: {
       totalNotifications: total,
@@ -9471,10 +9560,13 @@ app.post('/api/v2/templates/customize', (req, res) => {
     if (found) variant = found;
   }
 
-  // Apply customizations
+  // Apply customizations. The replacement value must have literal `$` escaped
+  // (as `$$`), otherwise String.replace() interprets user input like `$&`/`` $` ``/`$1`
+  // as special replacement patterns instead of literal text.
   let content = variant.content;
   for (const [key, value] of Object.entries(customizations)) {
-    content = content.replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), value);
+    const safeValue = String(value).replace(/\$/g, '$$$$');
+    content = content.replace(new RegExp(key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), safeValue);
   }
 
   // Calculate privacy score of customized content
@@ -10741,7 +10833,8 @@ async function callLanguageTool(text, language) {
     const response = await fetch('https://api.languagetool.org/v2/check', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString()
+      body: params.toString(),
+      signal: AbortSignal.timeout(10000)
     });
 
     if (response.status === 429) {
@@ -10890,6 +10983,7 @@ app.post('/api/v2/text-correct', textCorrectLimiter, async (req, res) => {
       
       return res.json({
         success: true,
+        timestamp: new Date().toISOString(),
         language,
         level,
         executiveSummary: `Proofread-Analyse (L0) mit ${ltCorrections.length} Befund(en). Rein regelbasierte Prüfung über LanguageTool.`,
@@ -10957,6 +11051,7 @@ app.post('/api/v2/text-correct', textCorrectLimiter, async (req, res) => {
     
     res.json({
       success: true,
+      timestamp: new Date().toISOString(),
       language,
       level,
       executiveSummary: result.executiveSummary || '',
@@ -11070,6 +11165,7 @@ Antworte AUSSCHLIESSLICH mit validem JSON:
     
     res.json({
       success: true,
+      timestamp: new Date().toISOString(),
       mode,
       originalText: text,
       improvedText: result.improvedText || text,
@@ -11119,6 +11215,7 @@ app.post('/api/v2/readability', textCorrectLimiter, async (req, res) => {
     
     res.json({
       success: true,
+      timestamp: new Date().toISOString(),
       language,
       scores: result.scores,
       statistics: result.statistics,
