@@ -9141,6 +9141,7 @@ app.get('/api/v2/alerts/verify/:token', (req, res) => {
 // GET /api/v2/alerts/status - Get subscription status
 app.get('/api/v2/alerts/status', (req, res) => {
   const email = req.query.email || req.headers['x-user-email'];
+  const subscriptionId = req.query.id || req.headers['x-subscription-id'];
 
   if (!email) {
     return res.status(400).json({
@@ -9150,7 +9151,11 @@ app.get('/api/v2/alerts/status', (req, res) => {
   }
 
   const subscription = alertSubscriptions.get(email);
-  if (!subscription) {
+  // Die subscriptionId ist ein unratbares Secret, das nur der Abonnent beim
+  // Abschluss des Abos erhält - ohne passende ID gilt die Anfrage als nicht
+  // autorisiert und wird wie "nicht abonniert" behandelt, um nicht zu verraten,
+  // ob eine fremde E-Mail-Adresse überhaupt ein Abo hat.
+  if (!subscription || !subscriptionId || subscription.id !== subscriptionId) {
     return res.json({
       success: true,
       subscribed: false,
@@ -9267,12 +9272,13 @@ app.get('/api/v2/alerts/recent-breaches', (req, res) => {
 // DELETE /api/v2/alerts/unsubscribe/:id - Unsubscribe from alerts
 app.delete('/api/v2/alerts/unsubscribe/:id', (req, res) => {
   const { id } = req.params;
-  const email = req.query.email || req.headers['x-user-email'];
 
-  // Find subscription by ID or email
+  // Nur die subscriptionId zählt als Nachweis - sie ist unratbar und wird nur
+  // dem Abonnenten mitgeteilt. Ein reiner E-Mail-Match würde jedem erlauben,
+  // eine fremde Adresse abzumelden, ohne sie je bestätigt zu haben.
   let foundEmail = null;
   for (const [subEmail, subscription] of alertSubscriptions.entries()) {
-    if (subscription.id === id || subEmail === email) {
+    if (subscription.id === id) {
       foundEmail = subEmail;
       break;
     }
@@ -9307,14 +9313,17 @@ app.delete('/api/v2/alerts/unsubscribe/:id', (req, res) => {
 app.get('/api/v2/alerts/history/:email', (req, res) => {
   const { email } = req.params;
   const { limit, offset } = req.query;
+  const subscriptionId = req.query.id || req.headers['x-subscription-id'];
   const parsedLimitRaw = parseInt(limit, 10);
   const parsedOffsetRaw = parseInt(offset, 10);
   const parsedLimit = Math.max(0, Number.isNaN(parsedLimitRaw) ? 20 : parsedLimitRaw);
   const parsedOffset = Math.max(0, Number.isNaN(parsedOffsetRaw) ? 0 : parsedOffsetRaw);
 
-  // Validate email
+  // Nur mit passender subscriptionId (unratbar, nur dem Abonnenten bekannt)
+  // wird die Historie herausgegeben - sonst könnte jeder per Email-Adresse
+  // fremde Benachrichtigungshistorien einsehen.
   const subscription = alertSubscriptions.get(email);
-  if (!subscription) {
+  if (!subscription || !subscriptionId || subscription.id !== subscriptionId) {
     return res.status(404).json({
       success: false,
       error: 'Keine Subscription für diese E-Mail gefunden'
