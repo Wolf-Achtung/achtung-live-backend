@@ -31,6 +31,112 @@ const TESTED_ANTHROPIC_MODEL = 'claude-3-haiku-20240307';
 // Budget. Ist der Wert zu klein, bleibt für die Antwort nichts übrig.
 const LLM_MAX_TOKENS = Math.max(256, parseInt(process.env.LLM_MAX_TOKENS, 10) || 4000);
 
+// JSON-Schemas für Structured Outputs.
+// Bisher bat der Prompt um JSON und der Code fischte es per Regex aus dem Text.
+// Mit einem Schema erzwingt der Provider gültiges JSON.
+// Regel bei strict: Jedes Feld muss in "required" stehen. Optionale Felder
+// werden als Union mit null deklariert, nicht weggelassen.
+const ANALYZE_V1_SCHEMA = {
+  type: 'object',
+  properties: {
+    feedback: { type: 'array', items: { type: 'string' } },
+    detected_data: { type: 'string' },
+    risk_level: { type: 'string', enum: ['Niedrig', 'Mittel', 'Hoch', 'Kritisch'] },
+    explanation: { type: 'string' },
+    tip: { type: 'string' },
+    rewrite_offer: { type: 'boolean' }
+  },
+  required: ['feedback', 'detected_data', 'risk_level', 'explanation', 'tip', 'rewrite_offer'],
+  additionalProperties: false
+};
+
+const ANALYZE_V2_SCHEMA = {
+  type: 'object',
+  properties: {
+    findings: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          type: {
+            type: 'string',
+            enum: ['health', 'child', 'location', 'emotion', 'employer', 'vacation', 'legal']
+          },
+          match: { type: 'string' },
+          start: { type: 'integer' },
+          end: { type: 'integer' },
+          severity: { type: 'string', enum: ['critical', 'high', 'medium'] },
+          message: { type: 'string' },
+          suggestion: { type: 'string' }
+        },
+        required: ['type', 'match', 'start', 'end', 'severity', 'message', 'suggestion'],
+        additionalProperties: false
+      }
+    },
+    rewriteSuggestion: { type: ['string', 'null'] }
+  },
+  required: ['findings', 'rewriteSuggestion'],
+  additionalProperties: false
+};
+
+const REWRITE_V2_SCHEMA = {
+  type: 'object',
+  properties: {
+    rewritten: { type: 'string' },
+    changes: {
+      type: 'array',
+      items: {
+        type: 'object',
+        properties: {
+          original: { type: 'string' },
+          replacement: { type: 'string' },
+          reason: { type: 'string' }
+        },
+        required: ['original', 'replacement', 'reason'],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ['rewritten', 'changes'],
+  additionalProperties: false
+};
+
+// Baut den response_format-Parameter für die OpenAI-Chat-API.
+function jsonSchemaFormat(name, schema) {
+  return { type: 'json_schema', json_schema: { name, strict: true, schema } };
+}
+
+// Das gerade benutzte Modell. Lehnt der Provider die Konfiguration ab,
+// schaltet der Server hier einmalig auf das getestete Modell um.
+let activeOpenAIModel = OPENAI_MODEL;
+
+// Erkennt, ob der Provider das Modell selbst zurückweist. Nur dann lohnt
+// ein Wechsel. Andere Fehler (Rate Limit, Timeout) bleiben unberührt.
+function isUnknownModelError(err) {
+  const code = err?.code || err?.error?.code || '';
+  if (code === 'model_not_found') return true;
+  if (err?.status !== 404 && err?.status !== 400) return false;
+  const msg = String(err?.message || '');
+  return /model/i.test(msg) && /(not found|does not exist|invalid|unsupported)/i.test(msg);
+}
+
+// Ruft OpenAI auf. Wird das konfigurierte Modell abgelehnt, wechselt der
+// Server auf das getestete Modell, statt jede Anfrage scheitern zu lassen.
+// So bleibt ein Modellwechsel per ENV gefahrlos.
+async function openaiChat(params) {
+  try {
+    return await openai.chat.completions.create({ ...params, model: activeOpenAIModel });
+  } catch (err) {
+    if (!isUnknownModelError(err) || activeOpenAIModel === TESTED_OPENAI_MODEL) throw err;
+    console.error(
+      `[MODELL] Provider lehnt "${activeOpenAIModel}" ab: ${err.message}\n` +
+      `         Wechsle für diesen Prozess auf "${TESTED_OPENAI_MODEL}". Prüfe OPENAI_MODEL.`
+    );
+    activeOpenAIModel = TESTED_OPENAI_MODEL;
+    return await openai.chat.completions.create({ ...params, model: activeOpenAIModel });
+  }
+}
+
 // Prüft, ob der Provider die Antwort am Token-Limit abgeschnitten hat.
 // OpenAI meldet 'length', Anthropic 'max_tokens'.
 function isTruncated(reason) {
@@ -5927,19 +6033,19 @@ app.post('/analyze', llmLimiter, async (req, res) => {
       });
     }
 
-    const completion = await openai.chat.completions.create({
-      model: OPENAI_MODEL,
+    const completion = await openaiChat({
       messages: [
         { role: 'system', content: ANALYZE_SYSTEM_PROMPT },
         { role: 'user', content: text }
       ],
       temperature: 0.3,
-      max_tokens: LLM_MAX_TOKENS
+      max_tokens: LLM_MAX_TOKENS,
+      response_format: jsonSchemaFormat('privacy_analysis', ANALYZE_V1_SCHEMA)
     });
 
     const responseText = completion.choices[0].message.content;
     const truncated = reportTruncation(
-      'POST /analyze', completion.choices[0].finish_reason, OPENAI_MODEL, LLM_MAX_TOKENS
+      'POST /analyze', completion.choices[0].finish_reason, activeOpenAIModel, LLM_MAX_TOKENS
     );
 
     // JSON aus der Antwort extrahieren
@@ -6008,8 +6114,7 @@ app.post('/rewrite', llmLimiter, async (req, res) => {
       });
     }
 
-    const completion = await openai.chat.completions.create({
-      model: OPENAI_MODEL,
+    const completion = await openaiChat({
       messages: [
         { role: 'system', content: REWRITE_SYSTEM_PROMPT },
         { role: 'user', content: text }
@@ -6020,7 +6125,7 @@ app.post('/rewrite', llmLimiter, async (req, res) => {
 
     const rewritten = completion.choices[0].message.content;
     const truncated = reportTruncation(
-      'POST /rewrite', completion.choices[0].finish_reason, OPENAI_MODEL, LLM_MAX_TOKENS
+      'POST /rewrite', completion.choices[0].finish_reason, activeOpenAIModel, LLM_MAX_TOKENS
     );
     res.json({
       success: true,
@@ -6598,19 +6703,19 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
     try {
       const userPrompt = `Kontext: ${context}\nText: "${text}"`;
 
-      const completion = await openai.chat.completions.create({
-        model: OPENAI_MODEL,
+      const completion = await openaiChat({
         messages: [
           { role: 'system', content: ANALYZE_V2_SYSTEM_PROMPT },
           { role: 'user', content: userPrompt }
         ],
         temperature: 0.3,
-        max_tokens: LLM_MAX_TOKENS
+        max_tokens: LLM_MAX_TOKENS,
+        response_format: jsonSchemaFormat('privacy_findings', ANALYZE_V2_SCHEMA)
       });
 
       const responseText = completion.choices[0].message.content;
       reportTruncation(
-        'POST /api/v2/analyze', completion.choices[0].finish_reason, OPENAI_MODEL, LLM_MAX_TOKENS
+        'POST /api/v2/analyze', completion.choices[0].finish_reason, activeOpenAIModel, LLM_MAX_TOKENS
       );
 
       // Parse GPT response
@@ -6620,7 +6725,7 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
       } catch {
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          gptResult = JSON.parse(jsonMatch[0]);
+          try { gptResult = JSON.parse(jsonMatch[0]); } catch { gptResult = null; }
         }
       }
 
@@ -6716,8 +6821,7 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
       } else {
         // Generate rewrite using dedicated endpoint logic
         try {
-          const rewriteCompletion = await openai.chat.completions.create({
-            model: OPENAI_MODEL,
+          const rewriteCompletion = await openaiChat({
             messages: [
               { role: 'system', content: REWRITE_SYSTEM_PROMPT },
               { role: 'user', content: text }
@@ -6729,7 +6833,7 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
           const rewrittenText = rewriteCompletion.choices[0].message.content;
           reportTruncation(
             'POST /api/v2/analyze (rewrite)', rewriteCompletion.choices[0].finish_reason,
-            OPENAI_MODEL, LLM_MAX_TOKENS
+            activeOpenAIModel, LLM_MAX_TOKENS
           );
 
           const changes = allCategories.map(cat => {
@@ -6781,21 +6885,24 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
 
 // Helper: Call AI with provider fallback
 async function callAIWithFallback(messages, options = {}) {
-  const { temperature = 0.3, max_tokens = LLM_MAX_TOKENS } = options;
+  const { temperature = 0.3, max_tokens = LLM_MAX_TOKENS, schema = null, schemaName = 'result' } = options;
   let provider = 'openai';
-  let model = OPENAI_MODEL;
+  let model = activeOpenAIModel;
 
   try {
-    // Try OpenAI first
-    const completion = await openai.chat.completions.create({
-      model,
+    // Try OpenAI first. Structured Outputs nur hier - der Anthropic-Fallback
+    // kennt response_format nicht und liefert weiter freien Text.
+    const completion = await openaiChat({
       messages,
       temperature,
-      max_tokens
+      max_tokens,
+      ...(schema && { response_format: jsonSchemaFormat(schemaName, schema) })
     });
 
     providerStatus.openai.available = true;
     providerStatus.openai.lastCheck = Date.now();
+    // openaiChat kann auf das getestete Modell gewechselt haben.
+    model = activeOpenAIModel;
 
     return {
       content: completion.choices[0].message.content,
@@ -6912,7 +7019,7 @@ app.get('/api/v2/health', (req, res) => {
     providers: {
       openai: {
         available: providerStatus.openai.available,
-        model: OPENAI_MODEL,
+        model: activeOpenAIModel,
         lastCheck: new Date(providerStatus.openai.lastCheck).toISOString(),
         lastError: providerStatus.openai.lastError
       },
@@ -7224,23 +7331,26 @@ app.post('/api/v2/rewrite', llmLimiter, async (req, res) => {
     const aiResponse = await callAIWithFallback([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
-    ], { temperature: 0.5 });
+    ], { temperature: 0.5, schema: REWRITE_V2_SCHEMA, schemaName: 'privacy_rewrite' });
 
     // Parse response
-    let result;
+    let result = null;
     try {
       result = JSON.parse(aiResponse.content);
     } catch {
       const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      } else {
-        // Fallback: treat entire response as rewritten text
-        result = {
-          rewritten: aiResponse.content,
-          changes: []
-        };
+        // Auch der Teiltreffer kann ungültig sein.
+        try {
+          result = JSON.parse(jsonMatch[0]);
+        } catch {
+          result = null;
+        }
       }
+    }
+    if (!result) {
+      // Kein JSON: Die Antwort als reinen umgeschriebenen Text behandeln.
+      result = { rewritten: aiResponse.content, changes: [] };
     }
 
     res.json({
@@ -7317,7 +7427,7 @@ app.post('/api/v2/analyze/batch', batchLimiter, async (req, res) => {
             const aiResponse = await callAIWithFallback([
               { role: 'system', content: ANALYZE_V2_SYSTEM_PROMPT },
               { role: 'user', content: userPrompt }
-            ]);
+            ], { schema: ANALYZE_V2_SCHEMA, schemaName: 'privacy_findings' });
 
             let gptResult;
             try {
@@ -7325,7 +7435,7 @@ app.post('/api/v2/analyze/batch', batchLimiter, async (req, res) => {
             } catch {
               const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
               if (jsonMatch) {
-                gptResult = JSON.parse(jsonMatch[0]);
+                try { gptResult = JSON.parse(jsonMatch[0]); } catch { gptResult = null; }
               }
             }
 
@@ -7440,7 +7550,7 @@ app.post('/api/v2/analyze/predictive', llmLimiter, async (req, res) => {
         const aiResponse = await callAIWithFallback([
           { role: 'system', content: ANALYZE_V2_SYSTEM_PROMPT },
           { role: 'user', content: userPrompt }
-        ]);
+        ], { schema: ANALYZE_V2_SCHEMA, schemaName: 'privacy_findings' });
 
         let gptResult;
         try {
@@ -7448,7 +7558,7 @@ app.post('/api/v2/analyze/predictive', llmLimiter, async (req, res) => {
         } catch {
           const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
           if (jsonMatch) {
-            gptResult = JSON.parse(jsonMatch[0]);
+            try { gptResult = JSON.parse(jsonMatch[0]); } catch { gptResult = null; }
           }
         }
 
