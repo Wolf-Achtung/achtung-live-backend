@@ -100,5 +100,7 @@ Schreib in den PR, was du wie geprüft hast.
 
 ## Zum Schluss
 
-Aktualisiere den Steckbrief in `CLAUDE.md`: Laufzeit-Version,
-Modell-IDs, Enddaten, ENV-Liste, Datum des Durchgangs.
+Lege den Steckbrief in `CLAUDE.md` an oder aktualisiere ihn: Laufzeit-Version,
+Modell-IDs, Enddaten, ENV-Liste, Datum des Durchgangs. Existiert die Datei
+noch nicht, schreibe sie aus dem, was du gerade geprüft hast. Der Nutzer
+muss dafür nichts vorbereiten.
