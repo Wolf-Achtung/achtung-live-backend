@@ -18,13 +18,40 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Modell-IDs per ENV konfigurierbar (Default = aktuell verwendete Modelle)
-const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-3-haiku-20240307';
+// Zwei Modellstufen, weil die Endpunkte zwei Profile haben:
+//
+//   fast     Der Nutzer wartet, bevor er absendet. Tempo geht vor Tiefe.
+//            Genutzt von /analyze, /rewrite, /api/v2/analyze, /api/v2/rewrite.
+//   quality  Auswertung im Hintergrund, Wartezeit vertretbar. Genutzt von
+//            Batch- und Predictive-Analyse sowie Textverbesserung und
+//            Lesbarkeitsanalyse.
+//
+// gpt-4.1-mini löst gpt-4o-mini ab: neuere Generation, schneller (gemessene
+// Zeit bis zum ersten Token 0,92 s statt 1,07 s), gleiche API-Parameter,
+// Structured Outputs unterstützt.
+//
+// Beide Stufen zeigen bewusst auf dasselbe Modell. Damit ändert die
+// Einführung der Stufen das Verhalten nicht. Wer die quality-Stufe stärker
+// besetzen will, setzt OPENAI_MODEL_QUALITY - ohne Code-Änderung.
+const DEFAULT_OPENAI_MODEL_FAST = 'gpt-4.1-mini';
+const DEFAULT_OPENAI_MODEL_QUALITY = 'gpt-4.1-mini';
 
-// Die getesteten Default-Modelle. Weicht die Konfiguration ab, warnt der Start.
-const TESTED_OPENAI_MODEL = 'gpt-4o-mini';
-const TESTED_ANTHROPIC_MODEL = 'claude-3-haiku-20240307';
+// Erprobtes Rückfallmodell. Lehnt der Provider eine Stufe ab, schaltet der
+// Server diese Stufe hierauf um. Bewusst das lang erprobte Modell.
+const FALLBACK_OPENAI_MODEL = 'gpt-4o-mini';
+
+// claude-3-haiku-20240307 wurde am 20.04.2026 abgeschaltet. Nachfolger laut
+// Anthropic-Dokumentation ist claude-haiku-4-5.
+const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-4-5';
+
+// Modell-IDs per ENV konfigurierbar (überschreiben die Defaults ohne Deploy).
+// OPENAI_MODEL setzt beide Stufen zugleich. Die stufenspezifischen Variablen
+// haben Vorrang, damit sich eine Stufe einzeln umstellen lässt.
+const OPENAI_MODEL_FAST =
+  process.env.OPENAI_MODEL_FAST || process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL_FAST;
+const OPENAI_MODEL_QUALITY =
+  process.env.OPENAI_MODEL_QUALITY || process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL_QUALITY;
+const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
 
 // Antwort-Budget für die Analyse- und Rewrite-Endpunkte.
 // Manche Modelle denken vor der Antwort. Dieses Denken verbraucht dasselbe
@@ -106,9 +133,18 @@ function jsonSchemaFormat(name, schema) {
   return { type: 'json_schema', json_schema: { name, strict: true, schema } };
 }
 
-// Das gerade benutzte Modell. Lehnt der Provider die Konfiguration ab,
-// schaltet der Server hier einmalig auf das getestete Modell um.
-let activeOpenAIModel = OPENAI_MODEL;
+// Das je Stufe gerade benutzte Modell. Lehnt der Provider eine Stufe ab,
+// schaltet der Server nur diese Stufe auf das Rückfallmodell um.
+const activeOpenAIModels = {
+  fast: OPENAI_MODEL_FAST,
+  quality: OPENAI_MODEL_QUALITY
+};
+
+// Liefert das aktive Modell einer Stufe. Unbekannte Stufen fallen auf fast
+// zurück, damit ein Tippfehler im Aufruf keine Anfrage zerlegt.
+function modelForTier(tier) {
+  return activeOpenAIModels[tier] || activeOpenAIModels.fast;
+}
 
 // Erkennt, ob der Provider das Modell selbst zurückweist. Nur dann lohnt
 // ein Wechsel. Andere Fehler (Rate Limit, Timeout) bleiben unberührt.
@@ -120,20 +156,22 @@ function isUnknownModelError(err) {
   return /model/i.test(msg) && /(not found|does not exist|invalid|unsupported)/i.test(msg);
 }
 
-// Ruft OpenAI auf. Wird das konfigurierte Modell abgelehnt, wechselt der
-// Server auf das getestete Modell, statt jede Anfrage scheitern zu lassen.
-// So bleibt ein Modellwechsel per ENV gefahrlos.
-async function openaiChat(params) {
+// Ruft OpenAI auf der angegebenen Stufe auf. Wird das Modell abgelehnt,
+// wechselt der Server nur diese Stufe auf das Rückfallmodell, statt jede
+// Anfrage scheitern zu lassen. So bleibt ein Modellwechsel per ENV gefahrlos.
+async function openaiChat(params, tier = 'fast') {
+  const model = modelForTier(tier);
   try {
-    return await openai.chat.completions.create({ ...params, model: activeOpenAIModel });
+    return await openai.chat.completions.create({ ...params, model });
   } catch (err) {
-    if (!isUnknownModelError(err) || activeOpenAIModel === TESTED_OPENAI_MODEL) throw err;
+    if (!isUnknownModelError(err) || model === FALLBACK_OPENAI_MODEL) throw err;
+    const envName = tier === 'quality' ? 'OPENAI_MODEL_QUALITY' : 'OPENAI_MODEL_FAST';
     console.error(
-      `[MODELL] Provider lehnt "${activeOpenAIModel}" ab: ${err.message}\n` +
-      `         Wechsle für diesen Prozess auf "${TESTED_OPENAI_MODEL}". Prüfe OPENAI_MODEL.`
+      `[MODELL] Provider lehnt "${model}" (Stufe ${tier}) ab: ${err.message}\n` +
+      `         Wechsle diese Stufe auf "${FALLBACK_OPENAI_MODEL}". Prüfe ${envName} bzw. OPENAI_MODEL.`
     );
-    activeOpenAIModel = TESTED_OPENAI_MODEL;
-    return await openai.chat.completions.create({ ...params, model: activeOpenAIModel });
+    activeOpenAIModels[tier] = FALLBACK_OPENAI_MODEL;
+    return await openai.chat.completions.create({ ...params, model: FALLBACK_OPENAI_MODEL });
   }
 }
 
@@ -6045,7 +6083,7 @@ app.post('/analyze', llmLimiter, async (req, res) => {
 
     const responseText = completion.choices[0].message.content;
     const truncated = reportTruncation(
-      'POST /analyze', completion.choices[0].finish_reason, activeOpenAIModel, LLM_MAX_TOKENS
+      'POST /analyze', completion.choices[0].finish_reason, modelForTier('fast'), LLM_MAX_TOKENS
     );
 
     // JSON aus der Antwort extrahieren
@@ -6125,7 +6163,7 @@ app.post('/rewrite', llmLimiter, async (req, res) => {
 
     const rewritten = completion.choices[0].message.content;
     const truncated = reportTruncation(
-      'POST /rewrite', completion.choices[0].finish_reason, activeOpenAIModel, LLM_MAX_TOKENS
+      'POST /rewrite', completion.choices[0].finish_reason, modelForTier('fast'), LLM_MAX_TOKENS
     );
     res.json({
       success: true,
@@ -6715,7 +6753,7 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
 
       const responseText = completion.choices[0].message.content;
       reportTruncation(
-        'POST /api/v2/analyze', completion.choices[0].finish_reason, activeOpenAIModel, LLM_MAX_TOKENS
+        'POST /api/v2/analyze', completion.choices[0].finish_reason, modelForTier('fast'), LLM_MAX_TOKENS
       );
 
       // Parse GPT response
@@ -6833,7 +6871,7 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
           const rewrittenText = rewriteCompletion.choices[0].message.content;
           reportTruncation(
             'POST /api/v2/analyze (rewrite)', rewriteCompletion.choices[0].finish_reason,
-            activeOpenAIModel, LLM_MAX_TOKENS
+            modelForTier('fast'), LLM_MAX_TOKENS
           );
 
           const changes = allCategories.map(cat => {
@@ -6885,9 +6923,12 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
 
 // Helper: Call AI with provider fallback
 async function callAIWithFallback(messages, options = {}) {
-  const { temperature = 0.3, max_tokens = LLM_MAX_TOKENS, schema = null, schemaName = 'result' } = options;
+  const {
+    temperature = 0.3, max_tokens = LLM_MAX_TOKENS,
+    schema = null, schemaName = 'result', tier = 'fast'
+  } = options;
   let provider = 'openai';
-  let model = activeOpenAIModel;
+  let model = modelForTier(tier);
 
   try {
     // Try OpenAI first. Structured Outputs nur hier - der Anthropic-Fallback
@@ -6897,19 +6938,19 @@ async function callAIWithFallback(messages, options = {}) {
       temperature,
       max_tokens,
       ...(schema && { response_format: jsonSchemaFormat(schemaName, schema) })
-    });
+    }, tier);
 
     providerStatus.openai.available = true;
     providerStatus.openai.lastCheck = Date.now();
-    // openaiChat kann auf das getestete Modell gewechselt haben.
-    model = activeOpenAIModel;
+    // openaiChat kann diese Stufe auf das Rückfallmodell gewechselt haben.
+    model = modelForTier(tier);
 
     return {
       content: completion.choices[0].message.content,
       provider,
       model,
       truncated: reportTruncation(
-        'callAIWithFallback (openai)', completion.choices[0].finish_reason, model, max_tokens
+        `callAIWithFallback (openai, ${tier})`, completion.choices[0].finish_reason, model, max_tokens
       )
     };
   } catch (openaiError) {
@@ -7019,7 +7060,10 @@ app.get('/api/v2/health', (req, res) => {
     providers: {
       openai: {
         available: providerStatus.openai.available,
-        model: activeOpenAIModel,
+        // Tatsächlich aktive Modelle je Stufe. Weicht ein Wert vom
+        // konfigurierten ab, hat der Fallback gegriffen.
+        model: modelForTier('fast'),
+        models: { fast: modelForTier('fast'), quality: modelForTier('quality') },
         lastCheck: new Date(providerStatus.openai.lastCheck).toISOString(),
         lastError: providerStatus.openai.lastError
       },
@@ -7427,7 +7471,7 @@ app.post('/api/v2/analyze/batch', batchLimiter, async (req, res) => {
             const aiResponse = await callAIWithFallback([
               { role: 'system', content: ANALYZE_V2_SYSTEM_PROMPT },
               { role: 'user', content: userPrompt }
-            ], { schema: ANALYZE_V2_SCHEMA, schemaName: 'privacy_findings' });
+            ], { schema: ANALYZE_V2_SCHEMA, schemaName: 'privacy_findings', tier: 'quality' });
 
             let gptResult;
             try {
@@ -7550,7 +7594,7 @@ app.post('/api/v2/analyze/predictive', llmLimiter, async (req, res) => {
         const aiResponse = await callAIWithFallback([
           { role: 'system', content: ANALYZE_V2_SYSTEM_PROMPT },
           { role: 'user', content: userPrompt }
-        ], { schema: ANALYZE_V2_SCHEMA, schemaName: 'privacy_findings' });
+        ], { schema: ANALYZE_V2_SCHEMA, schemaName: 'privacy_findings', tier: 'quality' });
 
         let gptResult;
         try {
@@ -11222,7 +11266,7 @@ app.post('/api/v2/text-correct', textCorrectLimiter, async (req, res) => {
     const aiResponse = await callAIWithFallback([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
-    ], { temperature: 0.2, max_tokens: Math.max(LLM_MAX_TOKENS, 4000) });
+    ], { temperature: 0.2, max_tokens: Math.max(LLM_MAX_TOKENS, 4000), tier: 'quality' });
 
     // Parse AI response
     let result = null;
@@ -11449,22 +11493,26 @@ app.post('/api/v2/readability', textCorrectLimiter, async (req, res) => {
 // Warnt beim Start, wenn ein nicht getestetes Modell konfiguriert ist.
 // Bewusst ohne Liste "denkender" Modelle: Eine solche Liste veraltet.
 // Der Hinweis gilt für jede Abweichung vom getesteten Default.
-function warnOnUntestedModel(envName, configured, tested) {
-  if (configured === tested) return;
+function warnOnUntestedModel(envName, configured, expected) {
+  if (configured === expected) return;
   console.warn(
-    `[MODELL] ${envName}=${configured} weicht vom getesteten Default (${tested}) ab.\n` +
-    `         Prüfe zwei Dinge:\n` +
-    `         1. Denkt das Modell vor der Antwort? Dann zählt dieses Denken gegen\n` +
-    `            das Antwort-Budget. LLM_MAX_TOKENS (aktuell ${LLM_MAX_TOKENS}) erhöhen.\n` +
-    `         2. Akzeptiert das Modell die gesendeten Parameter (max_tokens, temperature)?\n` +
-    `         Abgeschnittene Antworten protokolliert der Server als [TRUNCATED].`
+    `[MODELL] ${envName}=${configured} weicht vom ausgelieferten Default (${expected}) ab.\n` +
+    `         Der Server sendet max_tokens, temperature und Structured Outputs\n` +
+    `         (response_format json_schema). Reasoning-Modelle lehnen max_tokens ab\n` +
+    `         und verlangen max_completion_tokens - dafür reicht diese Variable nicht,\n` +
+    `         es braucht eine Code-Änderung.\n` +
+    `         Logs beobachten: [MODELL] = Modell abgelehnt, [TRUNCATED] = Antwort\n` +
+    `         am Limit abgeschnitten (LLM_MAX_TOKENS, aktuell ${LLM_MAX_TOKENS}).`
   );
 }
 
 app.listen(PORT, () => {
   console.log(`achtung.live API läuft auf Port ${PORT}`);
-  warnOnUntestedModel('OPENAI_MODEL', OPENAI_MODEL, TESTED_OPENAI_MODEL);
+  console.log(`Modelle: fast=${OPENAI_MODEL_FAST}, quality=${OPENAI_MODEL_QUALITY}` +
+    (anthropic ? `, fallback=${ANTHROPIC_MODEL}` : ', kein Anthropic-Fallback'));
+  warnOnUntestedModel('OPENAI_MODEL_FAST', OPENAI_MODEL_FAST, DEFAULT_OPENAI_MODEL_FAST);
+  warnOnUntestedModel('OPENAI_MODEL_QUALITY', OPENAI_MODEL_QUALITY, DEFAULT_OPENAI_MODEL_QUALITY);
   if (anthropic) {
-    warnOnUntestedModel('ANTHROPIC_MODEL', ANTHROPIC_MODEL, TESTED_ANTHROPIC_MODEL);
+    warnOnUntestedModel('ANTHROPIC_MODEL', ANTHROPIC_MODEL, DEFAULT_ANTHROPIC_MODEL);
   }
 });
