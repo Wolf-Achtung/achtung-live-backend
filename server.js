@@ -53,6 +53,12 @@ const OPENAI_MODEL_QUALITY =
   process.env.OPENAI_MODEL_QUALITY || process.env.OPENAI_MODEL || DEFAULT_OPENAI_MODEL_QUALITY;
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || DEFAULT_ANTHROPIC_MODEL;
 
+// Endpunkt der LanguageTool-Prüfung. Der öffentliche Dienst begrenzt die
+// Anfragen pro IP - bei einer Replica teilen sich alle Nutzer dieselbe IP.
+// Per ENV umstellbar, damit eine eigene Instanz ohne Code-Änderung greift.
+const LANGUAGETOOL_API_URL =
+  process.env.LANGUAGETOOL_API_URL || 'https://api.languagetool.org/v2/check';
+
 // Antwort-Budget für die Analyse- und Rewrite-Endpunkte.
 // Manche Modelle denken vor der Antwort. Dieses Denken verbraucht dasselbe
 // Budget. Ist der Wert zu klein, bleibt für die Antwort nichts übrig.
@@ -6737,6 +6743,10 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
     // Step 2: GPT-based semantic analysis
     let gptFindings = [];
     let rewriteSuggestion = null;
+    // Fällt die semantische Stufe aus, bleiben nur die Regex-Muster. Die
+    // erkennen weder Gesundheit noch Kinder noch Emotionen. Ohne Kennzeichen
+    // liest sich der Ausfall als "nichts gefunden".
+    let semanticAnalysisFailed = false;
 
     try {
       const userPrompt = `Kontext: ${context}\nText: "${text}"`;
@@ -6782,10 +6792,15 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
         }));
 
         rewriteSuggestion = gptResult.rewriteSuggestion;
+      } else {
+        // Antwort kam an, war aber nicht auswertbar - ebenfalls ein Ausfall
+        // der semantischen Stufe, nicht ein Text ohne Befunde.
+        semanticAnalysisFailed = true;
       }
     } catch (gptError) {
       console.error('GPT-Analyse Fehler:', gptError.message);
       // Continue with pattern-based findings only
+      semanticAnalysisFailed = true;
     }
 
     // Step 3: Combine all findings and localize
@@ -6823,7 +6838,10 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
         lang,
         processingTime: Date.now() - startTime,
         patternsChecked: Object.keys(PATTERNS).length,
-        semanticAnalysis: gptFindings.length > 0
+        semanticAnalysis: gptFindings.length > 0,
+        // Trennt "semantische Stufe lief und fand nichts" von "sie lief nicht".
+        // semanticAnalysis allein sagt beides mit demselben false.
+        semanticAnalysisFailed
       }
     };
 
@@ -7402,6 +7420,10 @@ app.post('/api/v2/rewrite', llmLimiter, async (req, res) => {
       original: text,
       rewritten: result.rewritten,
       changes: result.changes || [],
+      // Am Token-Limit abgeschnitten: Der umgeschriebene Text ist unvollständig
+      // und kann ein JSON-Bruchstück sein. Ohne dieses Feld sieht die Antwort
+      // aus wie ein fertiges Ergebnis.
+      ...(aiResponse.truncated && { truncated: true }),
       meta: {
         provider: aiResponse.provider,
         model: aiResponse.model
@@ -7464,6 +7486,9 @@ app.post('/api/v2/analyze/batch', batchLimiter, async (req, res) => {
 
           // GPT-based semantic analysis
           let gptFindings = [];
+          // Je Text getrennt: Bei einem Batch kann die semantische Stufe für
+          // einzelne Texte ausfallen, während sie für andere durchläuft.
+          let semanticAnalysisFailed = false;
 
           try {
             const userPrompt = `Kontext: ${context}\nText: "${text}"`;
@@ -7492,9 +7517,12 @@ app.post('/api/v2/analyze/batch', batchLimiter, async (req, res) => {
                 message: f.message,
                 suggestion: f.suggestion
               }));
+            } else {
+              semanticAnalysisFailed = true;
             }
           } catch (gptError) {
             console.error(`Batch GPT-Fehler für Text ${actualIndex}:`, gptError.message);
+            semanticAnalysisFailed = true;
           }
 
           const allCategories = [...patternFindings, ...gptFindings];
@@ -7507,7 +7535,8 @@ app.post('/api/v2/analyze/batch', batchLimiter, async (req, res) => {
             riskScore,
             riskLevel,
             findingsCount: allCategories.length,
-            categories: allCategories
+            categories: allCategories,
+            semanticAnalysisFailed
           };
         } catch (itemError) {
           return {
@@ -7541,6 +7570,10 @@ app.post('/api/v2/analyze/batch', batchLimiter, async (req, res) => {
       processed: texts.length,
       successful: successfulResults.length,
       failed: results.filter(r => r.error).length,
+      // Texte, die ein Ergebnis bekamen, aber ohne semantische Stufe. Sie
+      // zählen oben als "successful" - allein daran ist der Ausfall nicht
+      // zu erkennen.
+      semanticAnalysisFailures: results.filter(r => r.semanticAnalysisFailed).length,
       processingTime: Date.now() - startTime,
       summary: {
         averageRiskScore: avgRiskScore,
@@ -7588,6 +7621,10 @@ app.post('/api/v2/analyze/predictive', llmLimiter, async (req, res) => {
 
     // Step 2: GPT-based semantic analysis (unless quickCheck)
     let gptFindings = [];
+    // Siehe /api/v2/analyze: ohne Kennzeichen ist ein Ausfall der semantischen
+    // Stufe von einem unauffälligen Text nicht zu unterscheiden. Hier wiegt das
+    // schwerer, weil die Prognosewerte auf den Befunden aufbauen.
+    let semanticAnalysisFailed = false;
     if (!options.quickCheck) {
       try {
         const userPrompt = `Kontext: ${context}\nText: "${text}"`;
@@ -7615,9 +7652,12 @@ app.post('/api/v2/analyze/predictive', llmLimiter, async (req, res) => {
             message: f.message,
             suggestion: f.suggestion
           }));
+        } else {
+          semanticAnalysisFailed = true;
         }
       } catch (gptError) {
         console.error('Predictive GPT-Analyse Fehler:', gptError.message);
+        semanticAnalysisFailed = true;
       }
     }
 
@@ -7724,6 +7764,9 @@ app.post('/api/v2/analyze/predictive', llmLimiter, async (req, res) => {
         mode: options.quickCheck ? 'quickCheck' : 'fullAnalysis',
         lang,
         processingTime: Date.now() - startTime,
+        // Ist das true, beruhen alle Prognosewerte oben allein auf den
+        // Regex-Mustern. Die semantische Stufe hat nichts beigetragen.
+        semanticAnalysisFailed,
         version: '7.0.0'
       }
     });
@@ -11058,6 +11101,12 @@ Antworte AUSSCHLIESSLICH mit validem JSON (kein Markdown, keine Erklärungen au�
 
 // --- LanguageTool Integration ---
 
+// Gibt ein Ergebnis mit Statusfeld zurück, nicht nur die Daten.
+//
+// Vorher lieferte diese Funktion bei jedem Fehler null. Der Aufrufer sah
+// daraufhin eine leere Befundliste - dasselbe Bild wie bei einem fehlerfreien
+// Text. Ein Ausfall von LanguageTool wurde so zu "keine Fehler gefunden".
+// Mit `available` lässt sich beides unterscheiden.
 async function callLanguageTool(text, language) {
   const ltLang = language || 'de-DE';
   const params = new URLSearchParams({
@@ -11067,7 +11116,7 @@ async function callLanguageTool(text, language) {
   });
 
   try {
-    const response = await fetch('https://api.languagetool.org/v2/check', {
+    const response = await fetch(LANGUAGETOOL_API_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString(),
@@ -11076,19 +11125,19 @@ async function callLanguageTool(text, language) {
 
     if (response.status === 429) {
       console.warn('LanguageTool rate limit reached');
-      return null;
+      return { available: false, data: null, reason: 'rate_limit' };
     }
 
     if (!response.ok) {
       console.error('LanguageTool error:', response.status);
-      return null;
+      return { available: false, data: null, reason: `http_${response.status}` };
     }
 
     const data = await response.json();
-    return data;
+    return { available: true, data, reason: null };
   } catch (error) {
     console.error('LanguageTool request failed:', error.message);
-    return null;
+    return { available: false, data: null, reason: 'request_failed' };
   }
 }
 
@@ -11186,7 +11235,8 @@ app.post('/api/v2/text-correct', textCorrectLimiter, async (req, res) => {
     
     // Step 1: Call LanguageTool for base analysis
     const ltResult = await callLanguageTool(text, language);
-    const ltCorrections = mapLanguageToolMatches(ltResult);
+    const ltCorrections = mapLanguageToolMatches(ltResult.data);
+    const ltAvailable = ltResult.available;
     
     // Step 2: Calculate readability
     const readability = computeReadability(text, language);
@@ -11223,7 +11273,13 @@ app.post('/api/v2/text-correct', textCorrectLimiter, async (req, res) => {
         timestamp: new Date().toISOString(),
         language,
         level,
-        executiveSummary: `Proofread-Analyse (L0) mit ${ltCorrections.length} Befund(en). Rein regelbasierte Prüfung über LanguageTool.`,
+        // L0 hat keine zweite Quelle. Fällt LanguageTool aus, wurde der Text
+        // nicht geprüft - das muss dranstehen, sonst liest sich der Ausfall
+        // wie ein fehlerfreier Text.
+        executiveSummary: ltAvailable
+          ? `Proofread-Analyse (L0) mit ${ltCorrections.length} Befund(en). Rein regelbasierte Prüfung über LanguageTool.`
+          : 'Der Text wurde NICHT geprüft: LanguageTool war nicht erreichbar. ' +
+            'Das Ergebnis enthält keine Befunde, weil die Prüfung ausfiel - nicht, weil der Text fehlerfrei ist.',
         styleSheet: { variant, address: 'nicht ermittelt (L0)', gender: genderOption, numbers: 'Standard', quotes: variant === 'de-CH' ? '«…»' : '„…"', terminology: {} },
         originalText: text,
         correctedText,
@@ -11245,6 +11301,8 @@ app.post('/api/v2/text-correct', textCorrectLimiter, async (req, res) => {
         meta: {
           processingTime: Date.now() - startTime,
           provider: 'languagetool',
+          languageToolAvailable: ltAvailable,
+          ...(ltAvailable ? {} : { languageToolError: ltResult.reason }),
           promptVersion: TEXT_CORRECT_PROMPT_VERSION
         }
       });
@@ -11321,7 +11379,12 @@ app.post('/api/v2/text-correct', textCorrectLimiter, async (req, res) => {
       queries: result.queries || [],
       meta: {
         processingTime: Date.now() - startTime,
+        // provider bleibt bewusst unveraendert: Der Wert kann im Frontend
+        // ausgewertet werden. Fiel LanguageTool aus, lief nur die KI-Stufe -
+        // das steht in languageToolAvailable.
         provider: 'languagetool+ai',
+        languageToolAvailable: ltAvailable,
+        ...(ltAvailable ? {} : { languageToolError: ltResult.reason }),
         aiProvider: aiResponse.provider,
         aiModel: aiResponse.model,
         promptVersion: TEXT_CORRECT_PROMPT_VERSION
