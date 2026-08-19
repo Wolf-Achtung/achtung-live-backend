@@ -22,6 +22,32 @@ const openai = new OpenAI({
 const OPENAI_MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 const ANTHROPIC_MODEL = process.env.ANTHROPIC_MODEL || 'claude-3-haiku-20240307';
 
+// Die getesteten Default-Modelle. Weicht die Konfiguration ab, warnt der Start.
+const TESTED_OPENAI_MODEL = 'gpt-4o-mini';
+const TESTED_ANTHROPIC_MODEL = 'claude-3-haiku-20240307';
+
+// Antwort-Budget für die Analyse- und Rewrite-Endpunkte.
+// Manche Modelle denken vor der Antwort. Dieses Denken verbraucht dasselbe
+// Budget. Ist der Wert zu klein, bleibt für die Antwort nichts übrig.
+const LLM_MAX_TOKENS = Math.max(256, parseInt(process.env.LLM_MAX_TOKENS, 10) || 4000);
+
+// Prüft, ob der Provider die Antwort am Token-Limit abgeschnitten hat.
+// OpenAI meldet 'length', Anthropic 'max_tokens'.
+function isTruncated(reason) {
+  return reason === 'length' || reason === 'max_tokens';
+}
+
+// Protokolliert eine abgeschnittene Antwort. Gibt true zurück, wenn sie
+// abgeschnitten ist, damit der Aufrufer das an den Client weitergeben kann.
+function reportTruncation(endpoint, reason, model, maxTokens) {
+  if (!isTruncated(reason)) return false;
+  console.warn(
+    `[TRUNCATED] ${endpoint}: Modell ${model} erreichte das Limit von ${maxTokens} Tokens. ` +
+    `Erhöhe LLM_MAX_TOKENS. Denkt das Modell vor der Antwort, braucht es deutlich mehr Budget.`
+  );
+  return true;
+}
+
 // Anthropic Client (for fallback)
 let anthropic = null;
 try {
@@ -5908,32 +5934,55 @@ app.post('/analyze', llmLimiter, async (req, res) => {
         { role: 'user', content: text }
       ],
       temperature: 0.3,
-      max_tokens: 1000
+      max_tokens: LLM_MAX_TOKENS
     });
 
     const responseText = completion.choices[0].message.content;
+    const truncated = reportTruncation(
+      'POST /analyze', completion.choices[0].finish_reason, OPENAI_MODEL, LLM_MAX_TOKENS
+    );
 
     // JSON aus der Antwort extrahieren
-    let result;
+    let result = null;
     try {
       result = JSON.parse(responseText);
     } catch {
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      } else {
-        result = {
-          feedback: ['Der Text wurde analysiert, aber das Ergebnis konnte nicht verarbeitet werden.'],
-          detected_data: 'Unbekannt',
-          risk_level: 'Unbekannt',
-          explanation: responseText,
-          tip: 'Bitte versuche es erneut.',
-          rewrite_offer: false
-        };
+        // Auch der Teiltreffer kann ungültig sein. Ohne eigenen catch
+        // schlüge der Fehler bis zum 500er durch.
+        try {
+          result = JSON.parse(jsonMatch[0]);
+        } catch {
+          result = null;
+        }
       }
     }
 
-    res.json({ success: true, timestamp: new Date().toISOString(), ...result });
+    // Abgeschnitten und unlesbar: Das ist ein echter Fehler, kein Ergebnis.
+    if (!result && truncated) {
+      return res.status(502).json({
+        success: false,
+        timestamp: new Date().toISOString(),
+        truncated: true,
+        error: 'Die Analyse wurde am Token-Limit abgeschnitten und ist unvollständig.',
+        details: `Limit: ${LLM_MAX_TOKENS} Tokens. Bitte erneut versuchen.`
+      });
+    }
+
+    // Nicht abgeschnitten, aber kein JSON: Das Modell hat Prosa geliefert.
+    if (!result) {
+      result = {
+        feedback: ['Der Text wurde analysiert, aber das Ergebnis konnte nicht verarbeitet werden.'],
+        detected_data: 'Unbekannt',
+        risk_level: 'Unbekannt',
+        explanation: responseText,
+        tip: 'Bitte versuche es erneut.',
+        rewrite_offer: false
+      };
+    }
+
+    res.json({ success: true, timestamp: new Date().toISOString(), ...(truncated && { truncated: true }), ...result });
 
   } catch (error) {
     console.error('Analyse-Fehler:', error);
@@ -5966,11 +6015,19 @@ app.post('/rewrite', llmLimiter, async (req, res) => {
         { role: 'user', content: text }
       ],
       temperature: 0.5,
-      max_tokens: 1000
+      max_tokens: LLM_MAX_TOKENS
     });
 
     const rewritten = completion.choices[0].message.content;
-    res.json({ success: true, timestamp: new Date().toISOString(), rewritten });
+    const truncated = reportTruncation(
+      'POST /rewrite', completion.choices[0].finish_reason, OPENAI_MODEL, LLM_MAX_TOKENS
+    );
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      ...(truncated && { truncated: true }),
+      rewritten
+    });
 
   } catch (error) {
     console.error('Rewrite-Fehler:', error);
@@ -6548,10 +6605,13 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
           { role: 'user', content: userPrompt }
         ],
         temperature: 0.3,
-        max_tokens: 1500
+        max_tokens: LLM_MAX_TOKENS
       });
 
       const responseText = completion.choices[0].message.content;
+      reportTruncation(
+        'POST /api/v2/analyze', completion.choices[0].finish_reason, OPENAI_MODEL, LLM_MAX_TOKENS
+      );
 
       // Parse GPT response
       let gptResult;
@@ -6663,10 +6723,14 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
               { role: 'user', content: text }
             ],
             temperature: 0.5,
-            max_tokens: 1000
+            max_tokens: LLM_MAX_TOKENS
           });
 
           const rewrittenText = rewriteCompletion.choices[0].message.content;
+          reportTruncation(
+            'POST /api/v2/analyze (rewrite)', rewriteCompletion.choices[0].finish_reason,
+            OPENAI_MODEL, LLM_MAX_TOKENS
+          );
 
           const changes = allCategories.map(cat => {
             const typeLabels = {
@@ -6717,7 +6781,7 @@ app.post('/api/v2/analyze', llmLimiter, async (req, res) => {
 
 // Helper: Call AI with provider fallback
 async function callAIWithFallback(messages, options = {}) {
-  const { temperature = 0.3, max_tokens = 1500 } = options;
+  const { temperature = 0.3, max_tokens = LLM_MAX_TOKENS } = options;
   let provider = 'openai';
   let model = OPENAI_MODEL;
 
@@ -6736,7 +6800,10 @@ async function callAIWithFallback(messages, options = {}) {
     return {
       content: completion.choices[0].message.content,
       provider,
-      model
+      model,
+      truncated: reportTruncation(
+        'callAIWithFallback (openai)', completion.choices[0].finish_reason, model, max_tokens
+      )
     };
   } catch (openaiError) {
     console.error('OpenAI Fehler:', openaiError.message);
@@ -6767,10 +6834,17 @@ async function callAIWithFallback(messages, options = {}) {
         providerStatus.anthropic.available = true;
         providerStatus.anthropic.lastCheck = Date.now();
 
+        // Denkt das Modell vor der Antwort, steht der Text nicht zwingend im
+        // ersten Block. Den ersten Textblock suchen statt blind [0] zu nehmen.
+        const textBlock = response.content.find(b => b.type === 'text');
+
         return {
-          content: response.content[0].text,
+          content: textBlock ? textBlock.text : '',
           provider,
-          model
+          model,
+          truncated: reportTruncation(
+            'callAIWithFallback (anthropic)', response.stop_reason, model, max_tokens
+          )
         };
       } catch (anthropicError) {
         console.error('Anthropic Fehler:', anthropicError.message);
@@ -11038,19 +11112,28 @@ app.post('/api/v2/text-correct', textCorrectLimiter, async (req, res) => {
     const aiResponse = await callAIWithFallback([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
-    ], { temperature: 0.2, max_tokens: 4000 });
-    
+    ], { temperature: 0.2, max_tokens: Math.max(LLM_MAX_TOKENS, 4000) });
+
     // Parse AI response
-    let result;
+    let result = null;
     try {
       result = JSON.parse(aiResponse.content);
     } catch {
       const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      } else {
-        return sendV2Error(res, 500, 'AI_PARSE_ERROR', 'AI-Antwort konnte nicht als JSON geparst werden.');
+        // Auch der Teiltreffer kann ungültig sein.
+        try {
+          result = JSON.parse(jsonMatch[0]);
+        } catch {
+          result = null;
+        }
       }
+    }
+    if (!result) {
+      return aiResponse.truncated
+        ? sendV2Error(res, 502, 'AI_RESPONSE_TRUNCATED',
+            'Die Antwort wurde am Token-Limit abgeschnitten. Bitte erneut versuchen.')
+        : sendV2Error(res, 500, 'AI_PARSE_ERROR', 'AI-Antwort konnte nicht als JSON geparst werden.');
     }
     
     // Compute stats from corrections
@@ -11156,18 +11239,28 @@ Antworte AUSSCHLIESSLICH mit validem JSON:
     const aiResponse = await callAIWithFallback([
       { role: 'system', content: systemPrompt },
       { role: 'user', content: text }
-    ], { temperature: 0.4, max_tokens: 3000 });
-    
-    let result;
+    ], { temperature: 0.4, max_tokens: Math.max(LLM_MAX_TOKENS, 3000) });
+
+    let result = null;
     try {
       result = JSON.parse(aiResponse.content);
     } catch {
       const jsonMatch = aiResponse.content.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        result = JSON.parse(jsonMatch[0]);
-      } else {
-        result = { improvedText: aiResponse.content, changes: [] };
+        // Auch der Teiltreffer kann ungültig sein.
+        try {
+          result = JSON.parse(jsonMatch[0]);
+        } catch {
+          result = null;
+        }
       }
+    }
+    if (!result && aiResponse.truncated) {
+      return sendV2Error(res, 502, 'AI_RESPONSE_TRUNCATED',
+        'Die Antwort wurde am Token-Limit abgeschnitten. Bitte erneut versuchen.');
+    }
+    if (!result) {
+      result = { improvedText: aiResponse.content, changes: [] };
     }
     
     const readabilityAfter = computeReadability(result.improvedText || text, language);
@@ -11243,6 +11336,25 @@ app.post('/api/v2/readability', textCorrectLimiter, async (req, res) => {
 
 
 // Server starten
+// Warnt beim Start, wenn ein nicht getestetes Modell konfiguriert ist.
+// Bewusst ohne Liste "denkender" Modelle: Eine solche Liste veraltet.
+// Der Hinweis gilt für jede Abweichung vom getesteten Default.
+function warnOnUntestedModel(envName, configured, tested) {
+  if (configured === tested) return;
+  console.warn(
+    `[MODELL] ${envName}=${configured} weicht vom getesteten Default (${tested}) ab.\n` +
+    `         Prüfe zwei Dinge:\n` +
+    `         1. Denkt das Modell vor der Antwort? Dann zählt dieses Denken gegen\n` +
+    `            das Antwort-Budget. LLM_MAX_TOKENS (aktuell ${LLM_MAX_TOKENS}) erhöhen.\n` +
+    `         2. Akzeptiert das Modell die gesendeten Parameter (max_tokens, temperature)?\n` +
+    `         Abgeschnittene Antworten protokolliert der Server als [TRUNCATED].`
+  );
+}
+
 app.listen(PORT, () => {
   console.log(`achtung.live API läuft auf Port ${PORT}`);
+  warnOnUntestedModel('OPENAI_MODEL', OPENAI_MODEL, TESTED_OPENAI_MODEL);
+  if (anthropic) {
+    warnOnUntestedModel('ANTHROPIC_MODEL', ANTHROPIC_MODEL, TESTED_ANTHROPIC_MODEL);
+  }
 });
