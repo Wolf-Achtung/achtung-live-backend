@@ -11508,6 +11508,9 @@ function warnOnUntestedModel(envName, configured, expected) {
 
 app.listen(PORT, () => {
   console.log(`achtung.live API läuft auf Port ${PORT}`);
+  // Die tatsächlich laufende Version, nicht die Untergrenze aus package.json.
+  // Beantwortet beim Deploy in einer Zeile, was sonst nachgeschlagen werden muss.
+  console.log(`Laufzeit: Node ${process.versions.node} (${process.platform}/${process.arch})`);
   console.log(`Modelle: fast=${OPENAI_MODEL_FAST}, quality=${OPENAI_MODEL_QUALITY}` +
     (anthropic ? `, fallback=${ANTHROPIC_MODEL}` : ', kein Anthropic-Fallback'));
   warnOnUntestedModel('OPENAI_MODEL_FAST', OPENAI_MODEL_FAST, DEFAULT_OPENAI_MODEL_FAST);
