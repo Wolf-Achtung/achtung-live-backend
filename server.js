@@ -11379,9 +11379,10 @@ app.post('/api/v2/text-correct', textCorrectLimiter, async (req, res) => {
       queries: result.queries || [],
       meta: {
         processingTime: Date.now() - startTime,
-        // Fiel LanguageTool aus, lief nur die KI-Stufe. Das Ergebnis ist
-        // brauchbar, aber ohne die regelbasierte Voranalyse.
-        provider: ltAvailable ? 'languagetool+ai' : 'ai',
+        // provider bleibt bewusst unveraendert: Der Wert kann im Frontend
+        // ausgewertet werden. Fiel LanguageTool aus, lief nur die KI-Stufe -
+        // das steht in languageToolAvailable.
+        provider: 'languagetool+ai',
         languageToolAvailable: ltAvailable,
         ...(ltAvailable ? {} : { languageToolError: ltResult.reason }),
         aiProvider: aiResponse.provider,
