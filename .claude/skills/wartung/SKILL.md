@@ -1,4 +1,5 @@
 ---
+name: wartung
 description: Prüft ein Projekt auf Wartungsrückstand — wirkungslose ENV-Variablen, abgekündigte Modelle und APIs, veraltete Laufzeit, Dependency-Advisories, Fehler die sich als Erfolg tarnen, tote Pfade. Nutze dies, wenn der Nutzer nach Updates, Wartung, Aktualität oder Rückstand fragt, oder ein Projekt nach längerer Pause wieder anfasst.
 ---
 
